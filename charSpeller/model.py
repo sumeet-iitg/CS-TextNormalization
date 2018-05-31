@@ -67,12 +67,14 @@ class CharCNN(nn.Module):
         # Turn (batch_size x word_len x embedding_size) into (batch_size x embedding_size x word_len) for CNN
         inputs = char_embeddings.transpose(1,2)
 
-        print(inputs.size())
+        #mask the embeddings of padded words
+
+        # print(inputs.size())
 
         # Run through Conv1d and Pool1d layers
         c = self.conv1d(inputs)
 
-        print(c.size())
+        # print(c.size())
         p = self.pool1d(c)
 
         p = F.tanh(p)

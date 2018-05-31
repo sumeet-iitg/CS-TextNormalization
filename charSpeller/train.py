@@ -54,8 +54,8 @@ linesInTest = read_file_lines(testFile)
 
 
 #chunk_len is a fixed size of the input with padding
-def random_training_set(batch_size, fileLinePtr):
-    numLines = len(fileLinePtr) - 1
+def random_training_set(batch_size, fileLinePtr, evaluation=False):
+    numLines = len(fileLinePtr)
     wordList = []
     labelList = []
     maxWordLen = 0
@@ -63,6 +63,10 @@ def random_training_set(batch_size, fileLinePtr):
     for bi in range(batch_size):
         randomLine = fileLinePtr[rndm.randint(0, numLines)]
         words = randomLine.split()
+        if len(words) < 2:
+            # skip when we see an empty input or target
+            bi -= 1
+            continue
         if len(words[0]) > maxWordLen:
             maxWordLen = len(words[0])
         wordList.append(words[0])
@@ -73,8 +77,8 @@ def random_training_set(batch_size, fileLinePtr):
 
     inp, inpMask = convertWordsToCharTensor(wordList, maxWordLen)
     inp = Variable(inp)
-    inpMask = Variable(inpMask)
-    target = Variable(target)
+    inpMask = Variable(inpMask,volatile=evaluation)
+    target = Variable(target,volatile=evaluation)
     if args.cuda:
         inp = inp.cuda()
         inpMask = inpMask.cuda()
@@ -87,6 +91,7 @@ def train(inp, inpMask, target):
     # if args.cuda:
     #     hidden = hidden.cuda()
     decoder.zero_grad()
+    decoder.train()
 
     output = decoder(inp, inpMask)
     loss = criterion(output.view(args.batch_size, -1),target)
@@ -98,12 +103,20 @@ def train(inp, inpMask, target):
     loss.backward()
     decoder_optimizer.step()
 
-    return loss.data[0]
+    return loss.data[0]/args.batch_size
 
 def save():
     save_filename = os.path.splitext(os.path.basename(args.fileName))[0] + '.pt'
     torch.save(decoder, save_filename)
     print('Saved as %s' % save_filename)
+
+def evaluate(batch_size, fileLinePtr):
+    decoder.eval()																						# Turn on evaluation mode which disables dropout.
+    input, inputMask, target = random_training_set(batch_size, fileLinePtr, True)
+    output = decoder(input, inputMask)
+    # Get the final output vector from the model (the typo suggestion word predicted)
+    loss = criterion(output.view(args.batch_size, -1),target) # Get the loss of the predicitons
+    return loss.data[0] / batch_size
 
 #number of input char types
 char_vocab = len(string.printable)
@@ -134,7 +147,15 @@ try:
         loss_avg += loss
 
         if epoch % args.print_every == 0:
-            print('[%s (%d %d%%) %.4f]' % (time_since(start), epoch, epoch / args.n_epochs * 100, loss))
+            val_loss = evaluate(args.batch_size,linesInValid)  # test the model on validation data to check performance
+            print('-' * 89)
+
+            print('| end of epoch {:3d} %d%% | time: {:5.2f}s | valid loss {:5.2f} | '.format(
+                epoch,
+                epoch / args.n_epochs * 100,
+                time_since(start),
+                val_loss))  # Print some log statement
+            print('-' * 89)
         #     print(generate(decoder, 'Wh', 100, cuda=args.cuda), '\n')
 
     print("Saving...")
