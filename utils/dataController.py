@@ -68,10 +68,10 @@ class WordDictionary(object):
 #This is a simple class that stores all of our training, test, and validation data
 class Corpus(object):
     #This is the constructor, it takes a folder path to the train, test, and validation data
-    def __init__(self, fileName):
+    def __init__(self, filePrefix):
         self.dictionary = WordDictionary()
-        script_dir = os.path.dirname(__file__)
-        path = script_dir + "/" + fileName
+
+        path = filePrefix
 
         self.dictify(path + '.train')	#get all of the training examples
         self.dictify(path + '.valid')		#All of the validation examples

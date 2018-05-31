@@ -15,7 +15,7 @@ from tqdm import tqdm
 import sys
 
 sys.path.append(".")
-sys.path.append("./datasets")
+sys.path.append("../datasets")
 sys.path.append("../utils")
 
 from utils.helpers import *
