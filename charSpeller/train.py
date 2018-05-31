@@ -12,10 +12,9 @@ import time
 
 from tqdm import tqdm
 
-from helpers import *
+from utils.helpers import *
 from model import CharCNN
-from generate import *
-from dataController import Corpus, read_file_lines,convertWordsToCharTensor
+from utils.dataController import Corpus, read_file_lines, convertWordsToCharTensor
 
 
 # Parse command line arguments
@@ -55,7 +54,7 @@ linesInTest = read_file_lines(testFile)
 
 #chunk_len is a fixed size of the input with padding
 def random_training_set(batch_size, fileLinePtr, evaluation=False):
-    numLines = len(fileLinePtr)
+    numLines = len(fileLinePtr) - 1
     wordList = []
     labelList = []
     maxWordLen = 0
@@ -84,9 +83,9 @@ def random_training_set(batch_size, fileLinePtr, evaluation=False):
         inpMask = inpMask.cuda()
         target = target.cuda()
 
-    return inp, inpMask, target
+    return inp, inpMask, target, wordList
 
-def train(inp, inpMask, target):
+def train(inp, inpMask, target, inputWordList):
     # hidden = decoder.init_hidden(args.batch_size)
     # if args.cuda:
     #     hidden = hidden.cuda()
@@ -112,11 +111,25 @@ def save():
 
 def evaluate(batch_size, fileLinePtr):
     decoder.eval()																						# Turn on evaluation mode which disables dropout.
-    input, inputMask, target = random_training_set(batch_size, fileLinePtr, True)
+    input, inputMask, target, _ = random_training_set(batch_size, fileLinePtr, True)
     output = decoder(input, inputMask)
     # Get the final output vector from the model (the typo suggestion word predicted)
     loss = criterion(output.view(args.batch_size, -1),target) # Get the loss of the predicitons
     return loss.data[0] / batch_size
+
+def test(batch_size, fileLinePtr):
+    decoder.eval()
+    input, inputMask, target, input_word_list = random_training_set(batch_size, fileLinePtr, True)
+    outputs = decoder(input, inputMask)
+    temperature = 0.8
+    for i in range(len(outputs)):
+        # Sample from the network as a multinomial distribution
+        output_dist = outputs[i].data.view(-1).div(temperature).exp()
+        top_i = torch.multinomial(output_dist, 1)[0]
+        # Add predicted character to string and use as next input
+        predicted_word = labelCorpus.idxToWord(top_i)
+        target_word = labelCorpus.idxToWord(target[i].data[0])
+        print("Input:{}, Predicted:{} , Target:{}".format(input_word_list[i],predicted_word, target_word))
 
 #number of input char types
 char_vocab = len(string.printable)
@@ -149,9 +162,7 @@ try:
         if epoch % args.print_every == 0:
             val_loss = evaluate(args.batch_size,linesInValid)  # test the model on validation data to check performance
             print('-' * 89)
-
-            print('| end of epoch {:3d} %d%% | time: {:5.2f}s | valid loss {:5.2f} | '.format(
-                epoch,
+            print("| end of epoch {%3d} %d%% | %s | valid loss {:%5.2f} | "%(epoch,
                 epoch / args.n_epochs * 100,
                 time_since(start),
                 val_loss))  # Print some log statement
@@ -160,6 +171,8 @@ try:
 
     print("Saving...")
     save()
+    print("Testing...")
+    test(len(linesInTest), linesInTest)
 
 except KeyboardInterrupt:
     print("Saving before quit...")

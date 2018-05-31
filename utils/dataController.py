@@ -92,5 +92,10 @@ class Corpus(object):
             idx = self.dictionary.word2idx[word]
         return idx
 
+    def idxToWord(self, idx):
+        word = ""
+        if idx < len(self.dictionary.idx2word):
+            word = self.dictionary.idx2word[idx]
+        return word
 # labelCorpus = Corpus("twypo.label")
 # print(len(labelCorpus.dictionary))
