@@ -55,26 +55,23 @@ linesInTest = read_file_lines(testFile)
 
 #chunk_len is a fixed size of the input with padding
 def random_training_set(batch_size, fileLinePtr):
-    numLines = len(fileLinePtr)
+    numLines = len(fileLinePtr) - 1
     wordList = []
     labelList = []
     maxWordLen = 0
+    target = torch.LongTensor(batch_size)
     for bi in range(batch_size):
         randomLine = fileLinePtr[rndm.randint(0, numLines)]
         words = randomLine.split()
         if len(words[0]) > maxWordLen:
             maxWordLen = len(words[0])
         wordList.append(words[0])
-        labelList.append(words[1])
+        target[bi] = labelCorpus.getWordIdx(words[1])
 
     inp = torch.LongTensor(batch_size, maxWordLen)
     inpMask = torch.LongTensor(batch_size, maxWordLen)
-    target = torch.LongTensor(batch_size)
 
-    inp, inpMask = convertWordsToCharTensor(wordList)
-    for word in labelList:
-        target.append(labelCorpus.getWordIdx(word))
-
+    inp, inpMask = convertWordsToCharTensor(wordList, maxWordLen)
     inp = Variable(inp)
     inpMask = Variable(inpMask)
     target = Variable(target)
@@ -86,12 +83,12 @@ def random_training_set(batch_size, fileLinePtr):
     return inp, inpMask, target
 
 def train(inp, inpMask, target):
-    hidden = decoder.init_hidden(args.batch_size)
-    if args.cuda:
-        hidden = hidden.cuda()
+    # hidden = decoder.init_hidden(args.batch_size)
+    # if args.cuda:
+    #     hidden = hidden.cuda()
     decoder.zero_grad()
 
-    output, hidden = decoder(inp, inpMask, hidden)
+    output = decoder(inp, inpMask)
     loss = criterion(output.view(args.batch_size, -1),target)
 
     # for c in range(args.chunk_len):
@@ -104,7 +101,7 @@ def train(inp, inpMask, target):
     return loss.data[0]
 
 def save():
-    save_filename = os.path.splitext(os.path.basename(args.filename))[0] + '.pt'
+    save_filename = os.path.splitext(os.path.basename(args.fileName))[0] + '.pt'
     torch.save(decoder, save_filename)
     print('Saved as %s' % save_filename)
 
@@ -112,7 +109,7 @@ def save():
 char_vocab = len(string.printable)
 
 # number of output classes = vocab size
-numOutputClass = len(labelCorpus.dictionary.keys())
+numOutputClass = len(labelCorpus.dictionary)
 
 # Initialize models and start training
 

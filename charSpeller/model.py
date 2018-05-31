@@ -1,4 +1,4 @@
-# https://github.com/spro/char-rnn.pytorch
+# inspired from https://gist.github.com/spro/c87cc706625b8a54e604fb1024106556
 
 import torch
 import torch.nn as nn
@@ -49,40 +49,45 @@ class CharCNN(nn.Module):
         self.output_size = output_classes
 
         self.lookup = nn.Embedding(num_input_chars, hidden_size)
-        self.conv1d = nn.Conv1d(1,1,2) #inChannel, outChannel, kWidth
+        self.conv1d = nn.Conv1d(hidden_size,hidden_size,2) #inChannel, outChannel, kH, kWid
         self.pool1d = nn.AvgPool1d(2) # kernel width over which to pool
         self.decoder = nn.Linear(hidden_size, output_classes)
 
     def forward(self, inputs, inputMasks):
 
         batch_size = inputs.size(0)
-        inp_height = inputs.size(1)
-        inp_width = inputs.size(2)
+        inp_width = inputs.size(1)
 
+        # print(inputs)
+        # Input has dim batch_size x max_word_len
         # Embedding expects 2-d input and replaces every element
         # with a vector. Thus the order of the dimensions of the input has no importance.
         char_embeddings = self.lookup(inputs)
 
-        # Turn (batch_size x seq_len x embedding_size) into (embedding_size x seq_len x batch_size) for CNN
-        inputs = char_embeddings.transpose(0,2)
+        # Turn (batch_size x word_len x embedding_size) into (batch_size x embedding_size x word_len) for CNN
+        inputs = char_embeddings.transpose(1,2)
+
+        print(inputs.size())
 
         # Run through Conv1d and Pool1d layers
         c = self.conv1d(inputs)
-        p = self.pood1d(c)
+
+        print(c.size())
+        p = self.pool1d(c)
 
         p = F.tanh(p)
 
-        # Sum the hidden representation along the sequence dimension
-        # So I want to sum over the 1st dimension (0-indexed)
-        p = torch.sum(p, dim=1).squeeze(dim=1)
+        # Sum the hidden representation along the word_len dimension
+        # So I want to sum over the 2nd dimension (0-indexed)
+        p = torch.sum(p, dim=2).squeeze(dim=2)
 
 
-        # Final dimension hidden_size x batch_size which needs to be converted to batch_size x hidden_size for Linear Layer
-        p = p.transpose(0, 1)
+        # Final dimension batch_size which needs to be converted to batch_size x hidden_size for Linear Layer
+        # p = p.transpose(0, 1)
 
         # output is batch_size x num_output_class
         class_output = self.decoder(p)
         # this step is redundant, but just to make the point clear
-        output = class_output.view(batch_size, self.hidden_size)  # Treating (conv_seq_len x batch_size) as batch_size for linear layer
+        output = class_output.view(batch_size, self.output_size)
 
         return output
