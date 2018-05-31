@@ -12,6 +12,12 @@ import time
 
 from tqdm import tqdm
 
+import sys
+
+sys.path.append(".")
+sys.path.append("./datasets")
+sys.path.append("../utils")
+
 from utils.helpers import *
 from model import CharCNN
 from utils.dataController import Corpus, read_file_lines, convertWordsToCharTensor
