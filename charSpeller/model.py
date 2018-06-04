@@ -67,7 +67,7 @@ class CharCNN(nn.Module):
         # Turn (batch_size x word_len x embedding_size) into (batch_size x embedding_size x word_len) for CNN
         inputs = char_embeddings.transpose(1,2)
 
-        #mask the embeddings of padded words
+        # mask the embeddings of padded words
 
         # print(inputs.size())
 

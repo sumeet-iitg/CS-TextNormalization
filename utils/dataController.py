@@ -4,6 +4,7 @@ import codecs
 import os
 
 all_characters = string.printable
+SOS = "<START>"
 #converts each char in a word into a number and returns a tensor for that
 def char_tensor(word):
     tensor = torch.zeros(len(word)).long()
@@ -85,6 +86,37 @@ class Corpus(object):
                 word = line.split()
                 if len(word) > 0:
                     self.dictionary.add_word(word[0])
+
+    def getWordIdx(self, word):
+        idx = -1
+        if word in self.dictionary.word2idx.keys():
+            idx = self.dictionary.word2idx[word]
+        return idx
+
+    def idxToWord(self, idx):
+        word = ""
+        if idx < len(self.dictionary.idx2word):
+            word = self.dictionary.idx2word[idx]
+        return word
+
+class SentenceCorpus(object):
+    def __init__(self, filePrefix):
+        self.dictionary = WordDictionary()
+        self.dictionary.add_word(SOS)   # add start of sentence token
+
+        path = filePrefix
+        self.dictify(path + '.train')	#get all of the training examples
+        self.dictify(path + '.valid')	#All of the validation examples
+        self.dictify(path + '.test')    #and all of the testing examples
+
+    #This function takes in a file path, reads it and then tokenizes the contents of each line in that file. The return value is a tensor (vector) that contains all the ids for the tokens in the file
+    def dictify(self, path):
+        # Add words to the dictionary
+        with open(path, 'r') as f:						#Open the file
+            for line in f.readlines():					#for every line in the file
+                words = line.split('_')
+                for word in words:
+                    self.dictionary.add_word(word)
 
     def getWordIdx(self, word):
         idx = -1
