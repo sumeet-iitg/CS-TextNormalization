@@ -185,18 +185,23 @@ If teacher forcing is enabled then uses the ground truth from target
 def runDecoder(decoderObj, decoderInput, decoderHidden, targets, doTeacherForcing=False):
     seqLen = targets.size(1)
     totalLoss = 0
+    decoder_outputs = []
     for di in range(seqLen):
         decoder_output, decoder_hidden = decoderObj(
             decoderInput, decoderHidden)
 
+        decoder_outputs.append(decoder_output)
         # print("predictedClass, target:" + str(predictedClasses.size()) + "," + str(target[:,di].size()))
         totalLoss += criterion(decoder_output, targets[:, di])
+
         if doTeacherForcing:
             decoderInput = targets[:, di]  # Teacher forcing
         else:
             topv, topi = decoder_output.topk(1)
             decoderInput = topi.squeeze().detach()  # detach from history as input
-    return totalLoss
+
+    concatenated_output = torch.stack(decoder_outputs, dim=1)
+    return totalLoss,concatenated_output
 
 def save():
     save_filename = os.path.splitext(os.path.basename(args.fileName))[0] + '.pt'
@@ -216,20 +221,23 @@ def evaluate(fileLinePtr, printPred = False):
             batch_size = numLines - j
         input, inputMask, target, input_word_list = get_minibatch(fileLinePtr, j, batch_size, True)
         encoderOutput = encoder(input, inputMask)
-
         decoder_input = Variable(torch.LongTensor([labelCorpus.getWordIdx(SOS) for x in range(batch_size)]), volatile = True)
         decoder_hidden = encoderOutput[0].unsqueeze(0)
         currLoss, outputs = runDecoder(decoder, decoder_input,decoder_hidden, target)# no teacher forcing during evaluation
         totalLoss += currLoss
         temperature = 0.8
         if printPred:
-            for i in range(len(outputs)):
+            # decoder_output & target are of dim batch_size x seq_len
+            for row in range(outputs.size(0)):
                 # Sample from the network as a multinomial distribution
-                output_dist = outputs[i].data.view(-1).div(temperature).exp()
-                top_i = torch.multinomial(output_dist, 1)[0]
-                predicted_word = labelCorpus.idxToWord(top_i)
-                target_word = labelCorpus.idxToWord(target[i].data[0])
-                print("Input:{}, Predicted:{} , Target:{}".format(input_word_list[i], predicted_word, target_word))
+                predicted_word = ""
+                target_word = ""
+                for i in range(outputs.size(1)):
+                    output_dist = outputs[row][i].data.view(-1).div(temperature).exp()
+                    top_i = torch.multinomial(output_dist, 1)[0]
+                    predicted_word += labelCorpus.idxToWord(top_i) + "_"
+                    target_word += labelCorpus.idxToWord(target[row][i].data[0]) + "_"
+                print("Input:{}, Predicted:{} , Target:{}".format(input_word_list[row], predicted_word, target_word))
     return totalLoss / numLines
 
 #number of input char types
@@ -262,26 +270,32 @@ loss_avg = 0
 
 try:
     print("Training for %d epochs..." % args.n_epochs)
+    numMiniBatches = len(linesInTrain)/args.batch_size
+
     for epoch in tqdm(range(1, args.n_epochs + 1)):
+        minibatchesSinceLastPrint = 0
         for j in range(0, len(linesInTrain), args.batch_size):
             batch_size = args.batch_size
             if j + args.batch_size >= len(linesInTrain):
                 batch_size = len(linesInTrain) - j
             loss = train(*get_minibatch(linesInTrain, j, batch_size))
             loss_avg += loss
-            print("| end of epoch {%3d} %d%% | %s | train loss {:%5.2f} | " % (epoch,
-                                                                           epoch / args.n_epochs * 100,
-                                                                           time_since(start),
-                                                                           loss))  # Print some log statement
-        if epoch % args.print_every == 0:
+            minibatchesSinceLastPrint += 1
+            if minibatchesSinceLastPrint >= (args.print_every) :
+                print("current batch  %d-%d| %s | train loss {:%5.2f} | " % (j + 1,
+                                                                            j + batch_size + 1,
+                                                                            time_since(start),
+                                                                            loss))  # Print some log statement
+                # val_loss = evaluate(linesInValid, True)
+                minibatchesSinceLastPrint = 0
             # Print some log statement
-            val_loss = evaluate(linesInValid, True)  # test the model on entire validation data
-            print('-' * 89)
-            print("| end of epoch {%3d} %d%% | %s | valid loss {:%5.2f} | "%(epoch,
+        val_loss = evaluate(linesInValid, False)  # test the model on entire validation data
+        print('-' * 89)
+        print("| end of epoch {%3d} %d%% | %s | valid loss {:%5.2f} | "%(epoch,
                 epoch / args.n_epochs * 100,
                 time_since(start),
                 val_loss))  # Print some log statement
-            print('-' * 89)
+        print('-' * 89)
         #     print(generate(decoder, 'Wh', 100, cuda=args.cuda), '\n')
 
     print("Saving...")
