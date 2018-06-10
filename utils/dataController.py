@@ -65,6 +65,11 @@ class WordDictionary(object):
             f.write(str(word) + "->" + str(idx) + "\n")
         f.close()
 
+    def printKeys(self):
+        for word, idx in self.word2idx.items():
+            print("{} -> {}".format(word, idx))
+
+
 
 #This is a simple class that stores all of our training, test, and validation data
 class Corpus(object):
@@ -112,16 +117,21 @@ class SentenceCorpus(object):
     #This function takes in a file path, reads it and then tokenizes the contents of each line in that file. The return value is a tensor (vector) that contains all the ids for the tokens in the file
     def dictify(self, path):
         # Add words to the dictionary
-        with open(path, 'r') as f:						#Open the file
-            for line in f.readlines():					#for every line in the file
-                words = line.split('_')
+        with open(path, 'r') as fp:						#Open the file
+            line = fp.readline()
+            while line:
+                words = line.strip().split('_')
                 for word in words:
                     self.dictionary.add_word(word)
+                line = fp.readline()
+        # self.dictionary.printKeys()
 
     def getWordIdx(self, word):
         idx = -1
         if word in self.dictionary.word2idx.keys():
             idx = self.dictionary.word2idx[word]
+        if idx == -1:
+            print("Word not found in dict:"+word)
         return idx
 
     def idxToWord(self, idx):

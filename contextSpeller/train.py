@@ -57,8 +57,48 @@ linesInTrain = read_file_lines(trainFile)
 linesInValid = read_file_lines(validFile)
 linesInTest = read_file_lines(testFile)
 
-
 #chunk_len is a fixed size of the input with padding
+
+def get_minibatch(fileLinePtr, startIndex, batch_size, evaluation=False):
+    target = torch.LongTensor(batch_size, 3)
+    inpSentenceList = []
+    maxSentLen = 0
+
+    for bi in range(batch_size):
+        randomLine = fileLinePtr[startIndex + bi]
+        sentences = randomLine.split()
+        if len(sentences) < 2:
+            # skip when we see an empty input or target
+            bi -= 1
+            continue
+
+        if len(sentences[0]) > maxSentLen:
+            maxSentLen = len(sentences[0])
+        inpSentenceList.append(sentences[0])
+        targetWords = sentences[1].split('_')
+        for i in range(len(targetWords)):
+            targetClass = labelCorpus.getWordIdx(targetWords[i])
+            if targetClass >= numOutputClass or targetClass < 0:
+                print("Target class:{}, for word:{}".format(str(targetClass), str(targetWords[i])))
+            target[bi][i] = targetClass
+
+    inp = torch.LongTensor(batch_size, maxSentLen)
+    inpMask = torch.LongTensor(batch_size, maxSentLen)
+
+    # A sentence is formed with words linked by '_' followed by additional '_'
+    inp, inpMask = convertWordsToCharTensor(inpSentenceList, maxSentLen)
+    inp = Variable(inp)
+    inpMask = Variable(inpMask,volatile=evaluation)
+
+    target = Variable(target,volatile=evaluation)
+    if args.cuda:
+        inp = inp.cuda()
+        inpMask = inpMask.cuda()
+        target = target.cuda()
+
+    return inp, inpMask, target, inpSentenceList
+
+
 def random_training_set(batch_size, fileLinePtr, evaluation=False):
     numLines = len(fileLinePtr) - 1
     inpSentenceList = []
@@ -79,7 +119,10 @@ def random_training_set(batch_size, fileLinePtr, evaluation=False):
         inpSentenceList.append(sentences[0])
         targetWords = sentences[1].split('_')
         for i in range(len(targetWords)):
-            target[bi][i] = labelCorpus.getWordIdx(targetWords[i])
+            targetClass = labelCorpus.getWordIdx(targetWords[i])
+            if targetClass >= numOutputClass or targetClass <0:
+                print("Target class:{}, for word:{}".format(str(targetClass), str(targetWords[i])))
+            target[bi][i] = targetClass
 
     inp = torch.LongTensor(batch_size, maxSentLen)
     inpMask = torch.LongTensor(batch_size, maxSentLen)
@@ -99,78 +142,102 @@ def random_training_set(batch_size, fileLinePtr, evaluation=False):
 
 
 teacherForcingRatio = 0.5
-
 def train(inp, inpMask, target, inpSentenceList):
-    # hidden = decoder.init_hidden(args.batch_size)
-    # if args.cuda:
-    #     hidden = hidden.cuda()
     batch_size = target.size(0)
     inp_len = target.size(1)
-
     encoder.zero_grad()
     encoder.train()
     decoder.zero_grad()
     decoder.train()
-
     encodedOutput = encoder(inp, inpMask)
-
     teacherForcing = True if rndm.random() < teacherForcingRatio else False
-
-    decoder_input = torch.LongTensor([labelCorpus.getWordIdx(SOS) for x in range(batch_size)])
-    decoder_hidden = encodedOutput
-
+    decoder_input = Variable(torch.LongTensor([labelCorpus.getWordIdx(SOS) for x in range(batch_size)]))
+    decoder_hidden = encodedOutput[0].unsqueeze(0)
     loss = 0
+
     if teacherForcing:
         for di in range(3):# target sentence length to predict is always 3
-            decoder_output, decoder_hidden, decoder_attention = decoder(
+            decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
-            loss += criterion(decoder_output, target[:][di])
-            decoder_input = target[:][di]  # Teacher forcing
+
+            # maxClassProb, predictedClasses = torch.max(decoder_output, 1)
+            # print("predictedClass, target:" + str(predictedClasses.size()) + "," + str(target[:,di].size()))
+            loss += criterion(decoder_output, target[:,di])
+            decoder_input = target[:,di]  # Teacher forcing
     else:
         for di in range(3):# target sentence length to predict is always 3
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden)
-            loss += criterion(decoder_output, target[:][di])
-            decoder_input = decoder_output.topk(1)  # Non-Teacher forcing
-
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            # maxClassProb, predictedClasses = torch.max(decoder_output, 1)
+            # print("predictedClass, target:" + str(predictedClasses.size()) + "," + str(target[:,di].size()))
+            loss += criterion(decoder_output, target[:,di])
+            topv, topi = decoder_output.topk(1)
+            decoder_input = topi.squeeze().detach()  # detach from history as input
     loss.backward()
     encoder_optimizer.step()
     decoder_optimizer.step()
 
     return loss.data[0]/(args.batch_size*3)
 
+'''
+Runs a sequence decoder on a batch of initial inputs and returns the total loss.
+If teacher forcing is enabled then uses the ground truth from target 
+'''
+def runDecoder(decoderObj, decoderInput, decoderHidden, targets, doTeacherForcing=False):
+    seqLen = targets.size(1)
+    totalLoss = 0
+    for di in range(seqLen):
+        decoder_output, decoder_hidden = decoderObj(
+            decoderInput, decoderHidden)
+
+        # print("predictedClass, target:" + str(predictedClasses.size()) + "," + str(target[:,di].size()))
+        totalLoss += criterion(decoder_output, targets[:, di])
+        if doTeacherForcing:
+            decoderInput = targets[:, di]  # Teacher forcing
+        else:
+            topv, topi = decoder_output.topk(1)
+            decoderInput = topi.squeeze().detach()  # detach from history as input
+    return totalLoss
+
 def save():
     save_filename = os.path.splitext(os.path.basename(args.fileName))[0] + '.pt'
     torch.save(decoder, save_filename)
     print('Saved as %s' % save_filename)
 
-# def evaluate(batch_size, fileLinePtr):
-#     decoder.eval()																						# Turn on evaluation mode which disables dropout.
-#     input, inputMask, target, _ = random_training_set(batch_size, fileLinePtr, True)
-#     output = decoder(input, inputMask)
-#     # Get the final output vector from the model (the typo suggestion word predicted)
-#     loss = criterion(output.view(args.batch_size, -1),target) # Get the loss of the predicitons
-#     return loss.data[0] / batch_size
+def evaluate(fileLinePtr, printPred = False):
+    encoder.eval()
+    decoder.eval() # Turn on evaluation mode
+    loss = 0
+    numLines = len(fileLinePtr)
+    totalLoss = 0
 
-def test(batch_size, fileLinePtr):
-    decoder.eval()
-    input, inputMask, target, input_word_list = random_training_set(batch_size, fileLinePtr, True)
-    outputs = decoder(input, inputMask)
-    temperature = 0.8
-    for i in range(len(outputs)):
-        # Sample from the network as a multinomial distribution
-        output_dist = outputs[i].data.view(-1).div(temperature).exp()
-        top_i = torch.multinomial(output_dist, 1)[0]
-        # Add predicted character to string and use as next input
-        predicted_word = labelCorpus.idxToWord(top_i)
-        target_word = labelCorpus.idxToWord(target[i].data[0])
-        print("Input:{}, Predicted:{} , Target:{}".format(input_word_list[i],predicted_word, target_word))
+    for j in range(0, numLines, args.batch_size):
+        batch_size = args.batch_size
+        if j + args.batch_size >= numLines:
+            batch_size = numLines - j
+        input, inputMask, target, input_word_list = get_minibatch(fileLinePtr, j, batch_size, True)
+        encoderOutput = encoder(input, inputMask)
+
+        decoder_input = Variable(torch.LongTensor([labelCorpus.getWordIdx(SOS) for x in range(batch_size)]), volatile = True)
+        decoder_hidden = encoderOutput[0].unsqueeze(0)
+        currLoss, outputs = runDecoder(decoder, decoder_input,decoder_hidden, target)# no teacher forcing during evaluation
+        totalLoss += currLoss
+        temperature = 0.8
+        if printPred:
+            for i in range(len(outputs)):
+                # Sample from the network as a multinomial distribution
+                output_dist = outputs[i].data.view(-1).div(temperature).exp()
+                top_i = torch.multinomial(output_dist, 1)[0]
+                predicted_word = labelCorpus.idxToWord(top_i)
+                target_word = labelCorpus.idxToWord(target[i].data[0])
+                print("Input:{}, Predicted:{} , Target:{}".format(input_word_list[i], predicted_word, target_word))
+    return totalLoss / numLines
 
 #number of input char types
 char_vocab = len(string.printable)
 
 # number of output classes = vocab size
 numOutputClass = len(labelCorpus.dictionary)
+print("Number of Classes:" + str(numOutputClass))
 
 # Initialize models and start training
 
@@ -185,6 +252,7 @@ decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.learning_rate
 criterion = nn.CrossEntropyLoss()
 
 if args.cuda:
+    criterion.cuda()
     encoder.cuda()
     decoder.cuda()
 
@@ -195,25 +263,30 @@ loss_avg = 0
 try:
     print("Training for %d epochs..." % args.n_epochs)
     for epoch in tqdm(range(1, args.n_epochs + 1)):
-        loss = train(*random_training_set(args.batch_size,linesInTrain))
-        loss_avg += loss
-
+        for j in range(0, len(linesInTrain), args.batch_size):
+            batch_size = args.batch_size
+            if j + args.batch_size >= len(linesInTrain):
+                batch_size = len(linesInTrain) - j
+            loss = train(*get_minibatch(linesInTrain, j, batch_size))
+            loss_avg += loss
+            print("| end of epoch {%3d} %d%% | %s | train loss {:%5.2f} | " % (epoch,
+                                                                           epoch / args.n_epochs * 100,
+                                                                           time_since(start),
+                                                                           loss))  # Print some log statement
         if epoch % args.print_every == 0:
-            print("| end of epoch {%3d} %d%% | %s | train loss {:%5.2f} | "%(epoch,
+            # Print some log statement
+            val_loss = evaluate(linesInValid, True)  # test the model on entire validation data
+            print('-' * 89)
+            print("| end of epoch {%3d} %d%% | %s | valid loss {:%5.2f} | "%(epoch,
                 epoch / args.n_epochs * 100,
                 time_since(start),
-                loss))  # Print some log statement
-            # val_loss = evaluate(args.batch_size,linesInValid)  # test the model on validation data to check performance
-            # print('-' * 89)
-            # print("| end of epoch {%3d} %d%% | %s | valid loss {:%5.2f} | "%(epoch,
-            #     epoch / args.n_epochs * 100,
-            #     time_since(start),
-            #     val_loss))  # Print some log statement
-            # print('-' * 89)
+                val_loss))  # Print some log statement
+            print('-' * 89)
         #     print(generate(decoder, 'Wh', 100, cuda=args.cuda), '\n')
 
     print("Saving...")
     save()
+
     # print("Testing...")
     # test(len(linesInTest), linesInTest)
 

@@ -21,7 +21,7 @@ def read_file(filename):
 # Turning a string into a tensor
 
 def char_tensor(string):
-    tensor = torch.zeros(len(string)).long()
+    tensor = torch.zeros(len(string))
     for c in range(len(string)):
         try:
             tensor[c] = all_characters.index(string[c])

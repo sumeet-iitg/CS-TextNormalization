@@ -6,7 +6,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 class CharCNN(nn.Module):
-    def __init__(self, num_input_chars, hidden_size, model = "lstm", n_layers = 1):
+    def __init__(self, num_input_chars, hidden_size, model = "gru", n_layers = 1):
         super(CharCNN, self).__init__()
         self.model = model.lower()
         self.input_size = num_input_chars
@@ -26,7 +26,7 @@ class CharCNN(nn.Module):
         batch_size = inputs.size(0)
         inp_width = inputs.size(1)
 
-        # print(inputs)
+        # print("input:" + str(inputs.size()))
         # Input has dim batch_size x max_word_len
         # Embedding expects 2-d input and replaces every element
         # with a vector. Thus the order of the dimensions of the input has no importance.
@@ -38,7 +38,7 @@ class CharCNN(nn.Module):
 
         #mask the embeddings of padded words
 
-        # print(inputs.size())
+        # print("before conv:" + str(inputs.size()))
 
         # Run through Conv1d and Pool1d layers
         c = self.conv1d(inputs)
@@ -48,19 +48,30 @@ class CharCNN(nn.Module):
 
         p = F.tanh(p)
 
+        # print("after conv:" + str(p.size()))
+
         # Sum the hidden representation along the seq_len dimension
         # So I want to sum over the 2nd dimension (0-indexed)
+        p = torch.sum(p, dim=2)
+
+        # print("after sum:" + str(p.size()))
+
         # Final dimension needs to be converted to batch_size x hidden_size for Linear Layer
         # this would be batch_size x hidden_size
-        p = torch.sum(p, dim=2).squeeze(dim=2)
-
         # Turn (batch_size x hidden_size x seq_len) back into (seq_len x batch_size x hidden_size) for RNN
-        rnnInput = p.transpose(1, 2).transpose(0, 1)
+        rnnInput = inputs.transpose(1, 2).transpose(0, 1)
+        # print("encoder rnn Input:" + str(rnnInput.size()))
+
+        initialHidden = Variable(torch.zeros(1, batch_size, self.hidden_size))
+        initialHidden.cuda()
         # output is (batch_size x embedding_size)
-        rnnOutput, hidden = self.rnn(rnnInput, char_embeddings)
+        rnnOutput, hidden = self.rnn(rnnInput, initialHidden)
+
         # sum the output with the convolution output above, as final output
         output = rnnOutput + p
 
+        # print("encoder output:" + str(output.size()))
+        # print("encoder out hid:" + str(hidden.size()))
         # final output is batch_size x embedding_size
         return output
 
@@ -70,7 +81,7 @@ class DecoderRNN(nn.Module):
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(output_classes, hidden_size)
-        self.rnn = nn.LSTM(hidden_size, hidden_size)
+        self.rnn = nn.GRU(hidden_size, hidden_size, 1)
         self.linearLayer = nn.Linear(hidden_size, output_classes)
         self.output_size = output_classes
         self.softmax = nn.LogSoftmax(dim=1)
@@ -78,21 +89,32 @@ class DecoderRNN(nn.Module):
     def forward(self, input, hidden):
         # input dimension: batch_size
         batch_size = input.size(0)
-        seq_len = input.size(1)
-        # this will return batch_size x seq_len x emb_size
-        output = self.embedding(input)
-        output = F.relu(output)
 
-        # Turn (batch_size x seq_len x emb_size) to (seq_len x batch_size x emb_size) for RNN
-        output = output.transpose(0, 1)
+        # seq_len = input.size(1)
+        # this will return batch_size x emb_size
+        # print("decoder embedding input:"+str(input.size()))
+        embedded = self.embedding(input)
+        reluEmbedded = F.relu(embedded)
+
+        # Turn (batch_size x emb_size) to (seq_len x batch_size x emb_size) for RNN
+        rnnInput = reluEmbedded.unsqueeze(0)
+
+        # print("decoder rnn input:"+str(rnnInput.size()))
+        # print("decoder hidden size:"+str(hidden.size()))
+
         # Output: seq_length x batch_size x hidden_size
-        output, hidden = self.rnn(output, hidden)
+        output, hidden = self.rnn(rnnInput, hidden)
 
-        # Convert Output to 2-dim: [(batch_size x seq_len), hidden_size]
-        output = output.view(-1, output.size(2))
+        # print("decoder out size:"+str(output.size()))
 
-        output = self.softmax(self.linearLayer(output[0]))
+        # Convert Output to 2-dim: [(batch_size), hidden_size]
+        output = output.squeeze()
 
-        # convert the 2-D output back to 3-D
-        output = output.view(batch_size, seq_len, self.output_size)
+        # Linear Layer inp: batch_size, *, hidden_size
+        outClassVals = self.linearLayer(output)
+        # print("linear layer out:"+str(outClassVals.size()))
+        # output will be batch_size x output_classes
+        output = self.softmax(outClassVals)
+        # print("softmax out:" + str(output.size()))
+
         return output, hidden
