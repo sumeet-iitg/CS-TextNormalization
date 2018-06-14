@@ -15,13 +15,26 @@ class language:
             if isStopWord:
                 self.stopWordIds.append(lastDictPosn+1)
 
-class languageIdentifier:
-    def __init__(self, l1, l2):
-        self.l1 = l1
-        self.l2 = l2
+class languageIdentifier(object):
+    def __init__(self, langId):
+        self.langId = langId
+        self.lexicon = None
+
+    def createLexicon(self):
+        pass
 
     def detectLanguageInSentence(self, sentence):
         pass
 
     def detectLanguageInWord(self, word):
         pass
+
+class englishIdentifier(languageIdentifier):
+    def __init__(self):
+        super().__init__("en_US")
+
+class hindiIdentifier(languageIdentifier):
+    def __init__(self):
+        super().__init__("hi_IN")
+
+

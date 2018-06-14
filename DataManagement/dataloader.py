@@ -1,39 +1,30 @@
 # -*- coding: utf-8 -*-
 from DataManagement.languageUtils import language, languageIdentifier
 import codecs
+from DataManagement.filters import tweetFilter, blogFilter
 
+class corpus(object):
+    def __init__(self, srcFilePath):
+        self.srcPath = srcFilePath
 
-class codeSwitchedCorpus:
-    def __init__(self, filePath, tgtFilePath, lang1, lang2, langIdentifier):
-        self.filePath = filePath
-        self.tgtFilePath = tgtFilePath
-        self.lang1 = lang1
-        self.lang2 = lang2
-        self.langIdentifier = langIdentifier
+class biLingualCorpus(corpus):
+    def __init__(self, srcFilePath, filters, langId1, langId2):
+        super().__init__(srcFilePath)
+        self.langId1 = langId1
+        self.langId2 = langId2
+        self.filters = filters
 
-    '''
-    Reads through the corpus, tokenizing it and annotating with language 
-    '''
-    def normalize(self):
-        with codecs.open(self.filePath, 'r', encoding='utf-8') as rdr:
-            with codecs.open(self.tgtFilePath, 'w', encoding='utf-8') as wtr:
-                for line in rdr:
-                    tokenizedLine = self.tokenizer(line)
-                    wtr.write(self.normalizeLine(tokenizedLine))
+    def applyFilters(self):
+        tmpInpFilePath = "/tmp/filterIn.txt"
+        # copy contents from input file path to this temp file
+        for filter in self.filters:
+            filter(tmpInpFilePath)
 
-    def tokenizer(self, line):
-        tokenizedLine = {}
-        return tokenizedLine
+        return tmpInpFilePath
 
-    '''
-    Normalizes a sentenc annotated with language
-    '''
-    def normalizeLine(self, tokenizedLine):
-        return NotImplementedError
-
-class twitterCorpus(codeSwitchedCorpus):
-    def __init__(self, srcFilePath, tgtFilePath, lang1, lang2, langIdentifier):
-        super().__init__(srcFilePath, tgtFilePath, lang1, lang2, langIdentifier)
+class twitterBiLingual(biLingualCorpus):
+    def __init__(self, srcFilePath, filters, langId1, langId2):
+        super().__init__(srcFilePath, filters, langId1, langId2)
 
     # annotates each token in the word to be either Hashtags, Mentions, Url or Content
     def tokenizer(self, line):
@@ -44,9 +35,3 @@ class twitterCorpus(codeSwitchedCorpus):
             tokenizedLine[id] = {"type":'content', "val":word, "lang":"en"}
             id += 1
         return tokenizedLine
-
-# decide if blog corpus should be built along the lines of twitter corpus
-class blogCorpus(twitterCorpus):
-    def __init__(self, srcFilePath, tgtFilePath, lang1, lang2, langIdentifier):
-        super().__init__(srcFilePath, tgtFilePath, lang1, lang2, langIdentifier)
-
