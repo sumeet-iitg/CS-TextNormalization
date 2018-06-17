@@ -1,37 +1,39 @@
 # -*- coding: utf-8 -*-
-from DataManagement.languageUtils import language, languageIdentifier
-import codecs
-from DataManagement.filters import tweetFilter, blogFilter
+
+import os
 
 class corpus(object):
-    def __init__(self, srcFilePath):
+    def __init__(self, srcFilePath, filterCollection, langObjects):
         self.srcPath = srcFilePath
-
-class biLingualCorpus(corpus):
-    def __init__(self, srcFilePath, filters, langId1, langId2):
-        super().__init__(srcFilePath)
-        self.langId1 = langId1
-        self.langId2 = langId2
-        self.filters = filters
+        self.filterCollection = filterCollection
+        self.langObjects = langObjects
 
     def applyFilters(self):
-        tmpInpFilePath = "/tmp/filterIn.txt"
-        # copy contents from input file path to this temp file
-        for filter in self.filters:
-            filter(tmpInpFilePath)
+        # TODO: this code will not work for now if there are more than one elems in filterCOllection
+        assert len(self.filterCollection) < 2
 
-        return tmpInpFilePath
+        head, inpFileName = os.path.split(self.srcPath)
+        fileName, ext = inpFileName.split(".")
+        outFile = fileName + "_filtered"
+        outFileName = os.path.join(outFile, ext)
 
-class twitterBiLingual(biLingualCorpus):
-    def __init__(self, srcFilePath, filters, langId1, langId2):
-        super().__init__(srcFilePath, filters, langId1, langId2)
+        for filter in self.filterCollection:
+            filter.doFiltering(self.srcPath, outFileName)
 
-    # annotates each token in the word to be either Hashtags, Mentions, Url or Content
-    def tokenizer(self, line):
-        tokenizedLine = {}
-        id = 0
-        for word in line.split():
-            # type can be content, hashtag, mention or url
-            tokenizedLine[id] = {"type":'content', "val":word, "lang":"en"}
-            id += 1
-        return tokenizedLine
+        return outFileName
+
+    def normalize(self):
+        return NotImplementedError
+
+
+
+class monoLingualCorpus(corpus):
+    def __init__(self, srcFilePath, filters, langObjects):
+        super().__init__(srcFilePath, filters, langObjects)
+
+
+class biLingualCorpus(corpus):
+    def __init__(self, srcFilePath, filters, langObjects):
+        super().__init__(srcFilePath, filters, langObjects)
+
+
