@@ -25,14 +25,11 @@ class corpus(object):
     def normalize(self):
         return NotImplementedError
 
-
-
-class monoLingualCorpus(corpus):
+class monolingualCorpus(corpus):
     def __init__(self, srcFilePath, filters, langObjects):
         super().__init__(srcFilePath, filters, langObjects)
 
-
-class biLingualCorpus(corpus):
+class bilingualCorpus(corpus):
     def __init__(self, srcFilePath, filters, langObjects):
         super().__init__(srcFilePath, filters, langObjects)
 

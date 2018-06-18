@@ -29,7 +29,6 @@ class tweetFilterCollection(filterCollection):
         text = ekphraPreProcessor.text_processor.pre_process_doc(text)
         return text
 
-
     # some custom filters I was trying out.
     # Maybe redundant with Ekphrasis
     def stripHtml(self, text):

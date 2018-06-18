@@ -15,7 +15,6 @@ class language(object):
             if isStopWord:
                 self.stopWordIds.append(lastDictPosn+1)
 
-
 class languageIdentifier(object):
     def __init__(self, languageSet):
         self.langSet = languageSet
