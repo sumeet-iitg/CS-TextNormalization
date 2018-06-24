@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+from DataManagement.filters import tweetFilterCollection
 
 class corpus(object):
     def __init__(self, srcFilePath, filterCollection, langObjects):
@@ -10,17 +11,17 @@ class corpus(object):
 
     def applyFilters(self):
         # TODO: this code will not work for now if there are more than one elems in filterCOllection
-        assert len(self.filterCollection) < 2
+        # assert len(self.filterCollection) < 2
 
         head, inpFileName = os.path.split(self.srcPath)
         fileName, ext = inpFileName.split(".")
         outFile = fileName + "_filtered"
-        outFileName = os.path.join(outFile, ext)
+        outFile = os.path.join(head, outFile+"."+ext)
 
         for filter in self.filterCollection:
-            filter.doFiltering(self.srcPath, outFileName)
+            filter.doFiltering(inpFile = self.srcPath, outFileName=outFile)
 
-        return outFileName
+        return outFile
 
     def normalize(self):
         return NotImplementedError
