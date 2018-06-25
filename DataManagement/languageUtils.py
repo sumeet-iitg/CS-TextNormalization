@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import re
 from DataManagement.constants import ANNOT_REGEX, LITCM_CODE_TO_UNIV_CODE
+import codecs
 
 class language(object):
     def __init__(self, languageCode, spellChecker=None):
@@ -52,8 +53,11 @@ def polyglot_SpellChecker(languageAnnotated_Text):
     return " ".join(correctedWords)
 
 def getEnglish():
+    topWordsFile = "C:\\Users\\Sumeet Singh\\PycharmProjects\\TextNormalization\\CS-TextNormalization\\datasets\\top1000-English.txt"
     englishLanguage = language("en")
-    lexicon = []
+    with codecs.open(topWordsFile, 'r', 'utf-8') as fp:
+        lexicon = fp.read().split()
+
     stopWords = []
     # create language dictionaries
     for word in lexicon:
@@ -61,8 +65,10 @@ def getEnglish():
     return englishLanguage
 
 def getHindi():
+    topWordsFile = "C:\\Users\\Sumeet Singh\\PycharmProjects\\TextNormalization\\CS-TextNormalization\\datasets\\top1000-Hindi.txt"
     hindiLanguage = language("hi")
-    lexicon = []
+    with codecs.open(topWordsFile, 'r', 'utf-8') as fp:
+        lexicon = fp.read().split()
     stopWords = []
     for word in lexicon:
         hindiLanguage.addWordToDict(word, word in stopWords)
