@@ -1,6 +1,7 @@
 import tweepy
 import time
 import codecs
+from collections import defaultdict
 
 consumer_key= ''
 consumer_secret = ''
@@ -32,5 +33,24 @@ def crawl_tweets():
                             time.sleep(60 * 5)
                 tweet_ids = fr.read().split()
 
+
+# parses tweet TSV in CoNLL format
+# returns dict of 2 lists (tweet texts and labels)
+# lbl: list of labels for each tweet
+def parse_twitter(tsvfile):
+	txt_lst = defaultdict(list)
+	lbl_lst = defaultdict(list)
+	with open(tsvfile) as f:
+		for line in f.readlines():
+			all_info = line.replace('\n', '').split('\t')
+			tweet_id = all_info[0]
+			txt = all_info[4]
+			lbl = all_info[5]
+
+			txt_lst[tweet_id].append(txt)
+			lbl_lst[tweet_id].append(lbl)
+                
+    return {'txt': txt_lst, 'lbl': lbl_lst}
+                
 if __name__=='__main__':
     crawl_tweets()
