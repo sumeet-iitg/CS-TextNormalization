@@ -5,10 +5,10 @@ from collections import defaultdict
 from filters import tweetFilterCollection, dumbFilterCollection
 import emoji
 
-consumer_key= 'H7fTnyqbP8VWASr2R6hofb1kF'
-consumer_secret = 'IHQvllXFss7RWpy5fxAOdByDBcJG7kU2Dgy9zOVBKDsVqlYb09'
-auth_token = '175123301-vLCEEA8vuKmPw4vSIFnrsSe0IGi2Qq2kHRMHfZdD'
-auth_token_secret = 'a2rZpZZVuWpdtBB6X2pT4y1EFfqW7a0DwyFPmYF9hUC1R'
+consumer_key= ''
+consumer_secret = ''
+auth_token = ''
+auth_token_secret = ''
 
 auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
 auth.set_access_token(auth_token, auth_token_secret)
@@ -51,19 +51,6 @@ def crawl_unique_tweets():
                         # sleep for sometime to overcome request drop by twitter.
                         time.sleep(60 * 5)
 
-def parse_twitter(tsvfile):
-        txt_lst = defaultdict(list)
-        lbl_lst = defaultdict(list)
-        with codecs.open(tsvfile, encoding='utf-8') as f:
-            for line in f.readlines():
-                all_info = line.replace('\n', '').split('\t')
-                tweet_id = all_info[0]
-                txt = all_info[4]
-                lbl = all_info[5]
-                txt_lst[tweet_id].append(txt)
-                lbl_lst[tweet_id].append(lbl)
-        return txt_lst, lbl_lst
-
 '''
 This was written to remove consecutive duplicate words in tweets that are in Conll format.
 And also output a file with each containing a single tweet in each line. 
@@ -103,6 +90,25 @@ def applyFiltersToWord(word, filterCollection):
     for filter in filterCollection.filters:
         word = filter(word)
     return word
+
+
+# parses tweet TSV in CoNLL format
+# returns dict of 2 lists (tweet texts and labels)
+# lbl: list of labels for each tweet
+def parse_twitter(tsvfile):
+    txt_lst = defaultdict(list)
+    lbl_lst = defaultdict(list)
+    with open(tsvfile) as f:
+        for line in f.readlines():
+            all_info = line.replace('\n', '').split('\t')
+            tweet_id = all_info[0]
+            txt = all_info[4]
+            lbl = all_info[5]
+
+            txt_lst[tweet_id].append(txt)
+            lbl_lst[tweet_id].append(lbl)
+
+    return {'txt': txt_lst, 'lbl': lbl_lst}
 
 if __name__=='__main__':
     # crawl_tweets()
