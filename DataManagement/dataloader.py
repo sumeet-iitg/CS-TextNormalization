@@ -2,6 +2,7 @@
 
 import os
 from DataManagement.filters import tweetFilterCollection
+import codecs
 
 class corpus(object):
     def __init__(self, srcFilePath, filterCollection, langObjects):
@@ -18,9 +19,10 @@ class corpus(object):
         outFile = fileName + "_filtered"
         outFile = os.path.join(head, outFile+"."+ext)
 
-        for filter in self.filterCollection:
-            filter.doFiltering(inpFile = self.srcPath, outFileName=outFile)
-
+        with codecs.open(self.srcPath, 'r', encoding='utf-8') as fr:
+            with codecs.open(outFile, 'w', encoding='utf-8') as fw:
+                for filter in self.filterCollection:
+                    filter.doFiltering(fr,fw)
         return outFile
 
     def normalize(self):
