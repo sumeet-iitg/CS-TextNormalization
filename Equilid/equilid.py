@@ -38,13 +38,13 @@ import os.path
 import regex as re
 import argparse
 
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 
-import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
+
 
 from glob import glob
 
@@ -54,6 +54,8 @@ from os.path import basename
 
 from random import shuffle
 import os.path
+import codecs
+import torchtext
 
 import string
 
@@ -65,12 +67,13 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 from .EncoderRNN import EncoderRNN
 from .DecoderRNN import DecoderRNN
 from .TopKDecoder import TopKDecoder
-from .Seq2seq import Seq2seq
+from .Seq2seq import seq2seq
 from .supervised_trainer import SupervisedTrainer
 from .loss import Perplexity
 from .predictor import Predictor
 from .checkpoint import Checkpoint
-
+from .fields import  SourceField, TargetField
+from .optim import Optimizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_path', action='store', dest='train_path',
@@ -104,10 +107,7 @@ model_dir = cur_dir + "/../models/70lang"
 # encoding=utf8
 import sys
 
-reload(sys)
 sys.setdefaultencoding('utf8')
-
-FLAGS = parser.parse_args()
 
 _PAD = b"_PAD"
 _GO = b"_GO"
@@ -121,182 +121,75 @@ EOS_ID = 2
 UNK_ID = 3
 
 # We use a number of buckets and pad to the closest one for efficiency.
-_buckets = [(60, 11), (100, 26), (140, 36)]
+_buckets = [ (60, 11), (100, 26), (140, 36)]
 
+FLAGS = parser.parse_args()
 
-def load_dataset(data_dir, data_type, max_size=0, select=None):
-    """Loads the dataset from all sources"""
+'''
+    Load the train, dev and test into torch-text tabular dataset.
+'''
+def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None):
+    """Loads the dataset from all sources in torchtext tabulardataset fmt"""
 
     # Get all the files of IDs
+    # glob finds all the files with a given pattern
     files = [f for f in glob(data_dir + '/*' + data_type + '.ids')]
 
     # The match the source and target files
     prefices = set()
     for f in files:
         prefices.add(basename(f).split(".")[0])
-    paired_files = []
+    loaded_files = []
+
     for p in prefices:
         if (select is not None) and (not select in p):
             continue
-
         src = data_dir + '/' + p + '.source.' + data_type + '.ids'
         tgt = data_dir + '/' + p + '.target.' + data_type + '.ids'
-        paired_files.append((src, tgt))
+        src_tgt_combined = data_dir + '/' + p + '.source_target.' + data_type + '.ids'
+        if not os.path.exists(src_tgt_combined):
+            with open(src, 'r') as src_fp, open(tgt, 'r') as tgt_fp, open(src_tgt_combined, 'w') as src_tgt_fp:
+                src_line = src_fp.readline().strip()
+                tgt_line = tgt_fp.readline().strip()
+                while src_line and tgt_line:
+                    src_tgt_fp.write(src_line + '\t' + tgt_line)
+                    src_line = src_fp.readline().strip()
+                    tgt_line = tgt_fp.readline().strip()
 
-    # Everything gets stored here
-    data_set = [[] for _ in _buckets]
+        tabularFile = torchtext.data.TabularDataset(path=src_tgt_combined, format='tsv',
+                        fields=[('chars', srcField),('langs', tgtField)],
+                        filter_pred=lambda x: len(x.chars) < max_len)
+        loaded_files.append(tabularFile)
 
-    # Read in the files
-    for (src, tgt) in paired_files:
-        print("Loading data from %s" % (src))
-        read_data_files(src, tgt, data_set, max_size=max_size)
-
-    # Shuffle the data in each bucket
-    for bucket in data_set:
-        random.shuffle(bucket)
-
-    size = 0
-    for bucket in data_set:
-        size += len(bucket)
-    print('Loaded %d instances for %s' % (size, data_type))
-
-    return data_set
+    return loaded_files
 
 
-def read_data_files(source_path, target_path, data_set, max_size=0):
-    """Read data from source and target files and put into buckets.
-    Returns:
-    data_set: a list of length len(_buckets); data_set[n] contains a list of
-    (source, target) pairs read from the provided data files that fit
-    into the n-th bucket, i.e., such that len(source) < _buckets[n][0] and
-    len(target) < _buckets[n][1]; source and target are lists of token-ids.
-    """
-    counter = 0
-    skipped = 0
-
-    with tf.gfile.GFile(source_path, mode="r") as source_file:
-        with tf.gfile.GFile(target_path, mode="r") as target_file:
-            source, target = source_file.readline(), target_file.readline()
-            while source and target and (not max_size or counter < max_size):
-                counter += 1
-                if counter % 100000 == 0:
-                    print("  reading data line %d" % counter)
-                    sys.stdout.flush()
-
-                # The target data sometimes comes with its origin affixed, which
-                # we can safely skip
-                if '\t' in target:
-                    target = target.split('\t')[0]
-                if '\t' in source:
-                    source = source.split('\t')[0]
-
-                # +4 because of special ids like Pad, Unk etc.
-                source_ids = [int(x) + 4 for x in source.split()]
-                try:
-                    target_ids = [int(x) + 4 for x in target.split()]
-                except BaseException as e:
-                    print(target)
-                    raise e
-
-                if len(source_ids) == 0:
-                    pass
-
-                target_ids.append(EOS_ID)
-                is_placed = False
-                for bucket_id, (source_size, target_size) in enumerate(_buckets):
-                    if len(source_ids) < source_size:  # and len(target_ids) < target_size:
-                        data_set[bucket_id].append([source_ids, target_ids])
-                        is_placed = True
-                        break
-                if not is_placed:
-                    # Just put all the ungainly long instances in the last
-                    # bucket so we can handle them.  Ideally, the caller would
-                    # have prefiltered their instances so this wouldn't be an
-                    # issue, but just in case a few stragglers slipped in, might
-                    # as well include them
-                    data_set[-1].append([source_ids, target_ids])
-                source, target = source_file.readline(), target_file.readline()
-
-    print("Read %d lines, skipped %d instances" % (counter, skipped))
-    return data_set
-
-
-def create_model(session, forward_only):
+def create_model(specials):
     """Create translation model and initialize or load parameters in session."""
-
     # Prepare src char vocabulary and target vocabulary dataset
-    # TODO:
-    src = SourceField()
-    tgt = TargetField()
+
     max_len = 50
 
-    # Prepare loss
-    # TODO:
-    weight = torch.ones(len(tgt.vocab))
-    pad = tgt.vocab.stoi[tgt.pad_token]
-    loss = Perplexity(weight, pad)
+    # Initialize model
+    hidden_size = FLAGS.size
+    bidirectional = False
+    encoder = EncoderRNN(FLAGS.char_vocab_size,
+                         max_len,
+                         hidden_size,
+                         n_layers=FLAGS.num_layers,
+                         bidirectional=bidirectional,
+                         variable_lengths=True)
+    decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
+                         dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
+                         eos_id=specials["eos_id"], sos_id=specials["sos_id"], n_layers=FLAGS.num_layers)
+    seq2seqModel = seq2seq(encoder, decoder)
     if torch.cuda.is_available():
-        loss.cuda()
+        seq2seqModel.cuda()
 
-    seq2seq = None
-    optimizer = None
+    for param in seq2seqModel.parameters():
+        param.data.uniform_(-0.08, 0.08)
 
-    if not FLAGS.resume:
-        # Initialize model
-        hidden_size = FLAGS.size
-        bidirectional = False
-        encoder = EncoderRNN(FLAGS.char_vocab_size,
-                             max_len,
-                             hidden_size,
-                             n_layers=FLAGS.num_layers,
-                             bidirectional=bidirectional,
-                             variable_lengths=True)
-        decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
-                             dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
-                             eos_id=tgt.eos_id, sos_id=tgt.sos_id, n_layers=3)
-        seq2seq = Seq2seq(encoder, decoder)
-        if torch.cuda.is_available():
-            seq2seq.cuda()
-
-        for param in seq2seq.parameters():
-            param.data.uniform_(-0.08, 0.08)
-
-            # Optimizer and learning rate scheduler can be customized by
-            # explicitly constructing the objects and pass to the trainer.
-            #
-            # optimizer = Optimizer(torch.optim.Adam(seq2seq.parameters()), max_grad_norm=5)
-            # scheduler = StepLR(optimizer.optimizer, 1)
-            # optimizer.set_scheduler(scheduler)
-
-    # train
-    t = SupervisedTrainer(loss=loss, batch_size=32,
-                          checkpoint_every=50,
-                          print_every=10, expt_dir=FLAGS.expt_dir)
-
-    seq2seq = t.train(seq2seq, train,
-                      num_epochs=6, dev_data=dev,
-                      optimizer=optimizer,
-                      teacher_forcing_ratio=0.5,
-                      resume=opt.resume)
-
-    if FLAGS.train:
-        ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)
-        if ckpt and tf.gfile.Exists(ckpt.model_checkpoint_path):
-            print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
-            model.saver.restore(session, ckpt.model_checkpoint_path)
-        else:
-            print("Created model with fresh parameters.")
-            session.run(tf.initialize_all_variables())
-    else:
-        if not tf.gfile.Exists(FLAGS.model_dir):
-            print("No model file at %s .  Did you download a model yet?" \
-                  % FLAGS.model_dir)
-            sys.exit(1)
-        print("loading model from %s" % (FLAGS.model_dir))
-        ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)
-        model.saver.restore(session, ckpt.model_checkpoint_path)
-
-    return model
+    return seq2seqModel
 
 
 def train():
@@ -311,100 +204,42 @@ def train():
     if not os.path.exists(FLAGS.model_dir):
         os.makedirs(FLAGS.model_dir)
 
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=1.0, allow_growth=True)
+        srcField = SourceField()
+        tgtField = TargetField()
 
-    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True, \
-                                          log_device_placement=False, \
-                                          device_count={'GPU': 1}, \
-                                          gpu_options=gpu_options)) as sess:
+        dev_set = load_dataset(FLAGS.data_dir, srcField, tgtField, 'dev', FLAGS.max_train_data_size)
+        full_train_set = load_dataset(FLAGS.data_dir, srcField, tgtField,'train', FLAGS.max_train_data_size)
+        assert len(dev_set) == len(full_train_set)
 
-        dev_set = load_dataset(FLAGS.data_dir, 'dev')
-        full_train_set = load_dataset(FLAGS.data_dir, 'train', \
-                                      FLAGS.max_train_data_size)
-
-        train_set_ = [full_train_set, ]
-        for dataset_name in FLAGS.train_mixed.split(','):
-            print('Loading specifc dataset: %s' % dataset_name)
-            train_set_.append(load_dataset(FLAGS.data_dir, 'train', \
-                                           FLAGS.max_train_data_size, select=dataset_name))
-
-            num_datasets = len(train_set_)
-
-        train_bucket_sizes_ = []
-        train_total_size_ = []
-        train_buckets_scale_ = []
-
-        for ii, train_set in enumerate(train_set_):
-            train_bucket_sizes_.append([len(train_set[b]) for b in xrange(len(_buckets))])
-            train_total_size_.append(float(sum(train_bucket_sizes_[ii])))
-
-            # A bucket scale is a list of increasing numbers from 0 to 1 that we'll use
-            # to select a bucket. Length of [scale[i], scale[i+1]] is proportional to
-            # the size if i-th training bucket, as used later.
-
-            train_buckets_scale_.append([sum(train_bucket_sizes_[ii][:i + 1]) / train_total_size_[ii]
-                                         for i in xrange(len(train_bucket_sizes_[ii]))])
+        srcField.build_vocab(train, max_size=50000)
+        tgtField.build_vocab(train, max_size=50000)
 
         # Create model.
         print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-        model = create_model(sess, False)
+        specials = {"sos_id":tgtField.sos_id, "eos_id":tgtField.eos_id}
+        seq2seqModel = create_model(specials)
+
+        # Prepare loss
+        weight = torch.ones(len(tgtField.vocab))
+        pad = tgtField.vocab.stoi[tgtField.pad_token]
+        loss = Perplexity(weight, pad)
+        if torch.cuda.is_available():
+            loss.cuda()
 
         print("Training model")
 
-        # This is the training loop.
-        step_time, loss = 0.0, 0.0
-        current_step = 0
-        previous_losses = []
-        dataset_i = 0
-        while True:
-            dataset_i += 1
+        t = SupervisedTrainer(loss=loss, batch_size=32,
+                              checkpoint_every=50,
+                              print_every=10, expt_dir=FLAGS.expt_dir)
+        optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
 
-            # Choose a bucket according to data distribution. We pick a random number
-            # in [0, 1] and use the corresponding interval in train_buckets_scale.
-            random_number_01 = np.random.random_sample()
-            bucket_id = min([i for i in xrange(len(train_buckets_scale_[dataset_i % num_datasets]))
-                             if train_buckets_scale_[dataset_i % num_datasets][i] > random_number_01])
+        for i in range(len(full_train_set)):
+            seq2seq = t.train(seq2seqModel, full_train_set[i],
+                          num_epochs=6, dev_data=dev_set[i],
+                          optimizer=optimizer,
+                          teacher_forcing_ratio=0.5,
+                          resume=FLAGS.resume)
 
-            # Get a batch and make a step.
-            start_time = time.time()
-            encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-                train_set_[dataset_i % num_datasets], bucket_id)
-            _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                         target_weights, bucket_id, False)
-            step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
-            loss += step_loss / FLAGS.steps_per_checkpoint
-            current_step += 1
-
-            # Once in a while, we save checkpoint, print statistics, and run evals.
-            if current_step % FLAGS.steps_per_checkpoint == 0:
-                # Print statistics for the previous epoch.
-                perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
-                print("global step %d learning rate %.4f step-time %.2f sec, perplexity "
-                      "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
-                                step_time, perplexity))
-                # Decrease learning rate if no improvement was seen over last 3 times.
-                if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
-                    sess.run(model.learning_rate_decay_op)
-                previous_losses.append(loss)
-
-                # Save checkpoint and zero timer and loss.
-                checkpoint_path = os.path.join(FLAGS.model_dir, "equilid.ckpt")
-                model.saver.save(sess, checkpoint_path, global_step=model.global_step)
-                step_time, loss = 0.0, 0.0
-
-                # Run evals on development set and print their perplexity.
-                for bucket_id in xrange(len(_buckets)):
-                    if len(dev_set[bucket_id]) == 0:
-                        print("  eval: empty bucket %d" % (bucket_id))
-                        continue
-                    encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-                        dev_set, bucket_id)
-                    _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                                 target_weights, bucket_id, True)
-                    eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
-                        "inf")
-                    print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
-                sys.stdout.flush()
 
 
 def repair(tokens, predictions):
@@ -552,7 +387,6 @@ def repair(tokens, predictions):
 
         # print('%s\n%s\n' % (predictions, repaired))
 
-
         return repaired
 
 
@@ -630,129 +464,126 @@ def initialize_vocabulary(vocabulary_path):
     vocab = dict([(x, y) for (y, x) in enumerate(rev_vocab)])
     return vocab, rev_vocab
 
-
-def get_langs(text):
-    token_langs = classify(text)
-    langs = set([x for x in token_langs if len(x) == 3])
-    return langs
+#
+# def get_langs(text):
+#     token_langs = classify(text)
+#     langs = set([x for x in token_langs if len(x) == 3])
+#     return langs
 
 
 # The lazily-loaded classifier, which is a tuple of the model
-classifier = None
+# classifier = None
+
+# def classify(text):
+#     """
+#         text is by default treated as unicode in Python 3
+#     """
+#     global classifier
+#
+#     if classifier is None:
+#         # Prediction uses a small batch size
+#         FLAGS.batch_size = 1
+#         load_model()
+#
+#     # Unpack the classifier into the things we need
+#     sess, model, char_vocab, rev_char_vocab, lang_vocab, rev_lang_vocab = classifier
+#
+#     # Convert the input into character IDs
+#     token_ids = to_token_ids(text, char_vocab)
+#     # print(token_ids)
+#
+#     # Which bucket does it belong to?
+#     possible_buckets = [b for b in xrange(len(_buckets))
+#                         if _buckets[b][0] > len(token_ids)]
+#     if len(possible_buckets) == 0:
+#         # Stick it in the last bucket anyway, even if it's too long.
+#         # Gotta predict something! #YOLO.  It might be worth logging
+#         # to the user here if we want to be super paranoid though
+#         possible_buckets.append(len(_buckets) - 1)
+#
+#     bucket_id = min(possible_buckets)
+#     # Get a 1-element batch to feed the sentence to the model.
+#     #
+#     # NB: Could we speed things up by pushing in multiple instances
+#     # to a single batch?
+#
+#     # This is the standard way of feeding stuff into tensorflow
+#     encoder_inputs, decoder_inputs, target_weights = model.get_batch(
+#         {bucket_id: [(token_ids, [])]}, bucket_id)
+#
+#     # Get output logits for the sentence.
+#     _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+#                                      target_weights, bucket_id, True)
+#
+#     # This is a greedy decoder - outputs are just argmaxes of output_logits.
+#     outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+#
+#     # If there is an EOS symbol in outputs, cut them at that point.
+#     if EOS_ID in outputs:
+#         outputs = outputs[:outputs.index(EOS_ID)]
+#
+#     predicted_labels = []
+#     try:
+#         predicted_labels = [tf.compat.as_str(rev_lang_vocab[output]) for output in outputs]
+#     except BaseException as e:
+#         print(repr(e))
+#
+#     # Ensure we have predictions for each token
+#     predictions = repair(text.split(), predicted_labels)
+#
+#     return predictions
 
 
-def classify(text):
-    """
-
-    """
-    global classifier
-
-    # Ensure the text is always treated as unicode
-    text = unicode(text)
-
-    if classifier is None:
-        # Prediction uses a small batch size
-        FLAGS.batch_size = 1
-        load_model()
-
-    # Unpack the classifier into the things we need
-    sess, model, char_vocab, rev_char_vocab, lang_vocab, rev_lang_vocab = classifier
-
-    # Convert the input into character IDs
-    token_ids = to_token_ids(text, char_vocab)
-    # print(token_ids)
-
-    # Which bucket does it belong to?
-    possible_buckets = [b for b in xrange(len(_buckets))
-                        if _buckets[b][0] > len(token_ids)]
-    if len(possible_buckets) == 0:
-        # Stick it in the last bucket anyway, even if it's too long.
-        # Gotta predict something! #YOLO.  It might be worth logging
-        # to the user here if we want to be super paranoid though
-        possible_buckets.append(len(_buckets) - 1)
-
-    bucket_id = min(possible_buckets)
-    # Get a 1-element batch to feed the sentence to the model.
-    #
-    # NB: Could we speed things up by pushing in multiple instances
-    # to a single batch?
-    encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-        {bucket_id: [(token_ids, [])]}, bucket_id)
-
-    # Get output logits for the sentence.
-    _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                                     target_weights, bucket_id, True)
-
-    # This is a greedy decoder - outputs are just argmaxes of output_logits.
-    outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-
-    # If there is an EOS symbol in outputs, cut them at that point.
-    if EOS_ID in outputs:
-        outputs = outputs[:outputs.index(EOS_ID)]
-
-    predicted_labels = []
-    try:
-        predicted_labels = [tf.compat.as_str(rev_lang_vocab[output]) for output in outputs]
-    except BaseException as e:
-        print(repr(e))
-
-    # Ensure we have predictions for each token
-    predictions = repair(text.split(), predicted_labels)
-
-    return predictions
-
-
-def load_model():
-    global classifier
-    sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
-    # Create model and load parameters.
-    model = create_model(sess, True)
-
-    print("Loading vocabs")
-    # Load vocabularies.
-    char_vocab_path = FLAGS.model_dir + '/vocab.src'
-    lang_vocab_path = FLAGS.model_dir + '/vocab.tgt'
-    char_vocab, rev_char_vocab = initialize_vocabulary(char_vocab_path)
-    lang_vocab, rev_lang_vocab = initialize_vocabulary(lang_vocab_path)
-
-    classifier = (sess, model, char_vocab, rev_char_vocab, lang_vocab, rev_lang_vocab)
-
-
-def predict():
-    # NB: is there a safer way to do this with a using statement if the file
-    # is optionally written to but without having to buffer the output?
-    output_file = FLAGS.predict_output_file
-    if output_file is not None:
-        outf = open(output_file, 'w')
-    else:
-        outf = None
-
-    if FLAGS.predict_file:
-        print('Reading data to predict from' + FLAGS.predict_file)
-        predict_input = tf.gfile.GFile(FLAGS.predict_file, mode="r")
-    else:
-        print("No input file specified; reading from STDIN")
-        predict_input = sys.stdin
-
-    for i, source in enumerate(predict_input):
-        # Strip off newline
-        source = source[:-1]
-
-        predictions = classify(source)
-
-        if outf is not None:
-            outf.write(('%d\t%s\t%s\t%s\n' % (i, label, source_text, predicted)) \
-                       .encode('utf-8'))
-            # Since the model can take a while to predict, flush often
-            # so the end-user can actually see progress when writing to a file
-            if i % 10 == 0:
-                outf.flush()
-        else:
-            print(('Instance %d\t%s\t%s' % \
-                   (i, source.encode('utf-8'), ' '.join(predictions))).encode('utf-8'))
-
-    if outf is not None:
-        outf.close()
+# def load_model():
+#     global classifier
+#     # Create model and load parameters.
+#     model = create_model()
+#
+#     print("Loading vocabs")
+#     # Load vocabularies.
+#     char_vocab_path = FLAGS.model_dir + '/vocab.src'
+#     lang_vocab_path = FLAGS.model_dir + '/vocab.tgt'
+#     char_vocab, rev_char_vocab = initialize_vocabulary(char_vocab_path)
+#     lang_vocab, rev_lang_vocab = initialize_vocabulary(lang_vocab_path)
+#
+#     classifier = (model, char_vocab, rev_char_vocab, lang_vocab, rev_lang_vocab)
+#
+#
+# def predict():
+#     # NB: is there a safer way to do this with a using statement if the file
+#     # is optionally written to but without having to buffer the output?
+#     output_file = FLAGS.predict_output_file
+#     if output_file is not None:
+#         outf = open(output_file, 'w')
+#     else:
+#         outf = None
+#
+#     if FLAGS.predict_file:
+#         print('Reading data to predict from' + FLAGS.predict_file)
+#         predict_input = tf.gfile.GFile(FLAGS.predict_file, mode="r")
+#     else:
+#         print("No input file specified; reading from STDIN")
+#         predict_input = sys.stdin
+#
+#     for i, source in enumerate(predict_input):
+#         # Strip off newline
+#         source = source[:-1]
+#
+#         predictions = classify(source)
+#
+#         if outf is not None:
+#             outf.write(('%d\t%s\t%s\t%s\n' % (i, label, source_text, predicted)) \
+#                        .encode('utf-8'))
+#             # Since the model can take a while to predict, flush often
+#             # so the end-user can actually see progress when writing to a file
+#             if i % 10 == 0:
+#                 outf.flush()
+#         else:
+#             print(('Instance %d\t%s\t%s' % \
+#                    (i, source.encode('utf-8'), ' '.join(predictions))).encode('utf-8'))
+#
+#     if outf is not None:
+#         outf.close()
 
 
 def set_param(name, val):
@@ -763,303 +594,6 @@ def set_param(name, val):
     """
     setattr(FLAGS, name, val)
 
-
-def main(_):
-    with tf.device(FLAGS.gpu):
-        if FLAGS.train:
-            train()
-        else:
-            predict()
-
-
-class Seq2SeqModel(object):
-    """Sequence-to-sequence model with attention and for multiple buckets.
-
-    This class implements a multi-layer recurrent neural network as encoder,
-    and an attention-based decoder. This is the same as the model described in
-    this paper: http://arxiv.org/abs/1412.7449 - please look there for details,
-    or into the seq2seq library for complete model implementation.
-    This class also allows to use GRU cells in addition to LSTM cells, and
-    sampled softmax to handle large output vocabulary size. A single-layer
-    version of this model, but with bi-directional encoder, was presented in
-      http://arxiv.org/abs/1409.0473
-    and sampled softmax is described in Section 3 of the following paper.
-      http://arxiv.org/abs/1412.2007
-    """
-
-    def __init__(self,
-                 source_vocab_size,
-                 target_vocab_size,
-                 buckets,
-                 size,
-                 num_layers,
-                 max_gradient_norm,
-                 batch_size,
-                 learning_rate,
-                 learning_rate_decay_factor,
-                 use_lstm=False,
-                 num_samples=512,
-                 forward_only=False,
-                 dtype=tf.float32):
-        """Create the model.
-
-        Args:
-          source_vocab_size: size of the source vocabulary.
-          target_vocab_size: size of the target vocabulary.
-          buckets: a list of pairs (I, O), where I specifies maximum input length
-            that will be processed in that bucket, and O specifies maximum output
-            length. Training instances that have inputs longer than I or outputs
-            longer than O will be pushed to the next bucket and padded accordingly.
-            We assume that the list is sorted, e.g., [(2, 4), (8, 16)].
-          size: number of units in each layer of the model.
-          num_layers: number of layers in the model.
-          max_gradient_norm: gradients will be clipped to maximally this norm.
-          batch_size: the size of the batches used during training;
-            the model construction is independent of batch_size, so it can be
-            changed after initialization if this is convenient, e.g., for decoding.
-          learning_rate: learning rate to start with.
-          learning_rate_decay_factor: decay learning rate by this much when needed.
-          use_lstm: if true, we use LSTM cells instead of GRU cells.
-          num_samples: number of samples for sampled softmax.
-          forward_only: if set, we do not construct the backward pass in the model.
-          dtype: the data type to use to store internal variables.
-        """
-        self.source_vocab_size = source_vocab_size
-        self.target_vocab_size = target_vocab_size
-        self.buckets = buckets
-        self.batch_size = batch_size
-        self.learning_rate = tf.Variable(
-            float(learning_rate), trainable=False, dtype=dtype)
-        self.learning_rate_decay_op = self.learning_rate.assign(
-            self.learning_rate * learning_rate_decay_factor)
-        self.global_step = tf.Variable(0, trainable=False)
-
-        # If we use sampled softmax, we need an output projection.
-        output_projection = None
-        softmax_loss_function = None
-        # Sampled softmax only makes sense if we sample less than vocabulary size.
-        if num_samples > 0 and num_samples < self.target_vocab_size:
-            w = tf.get_variable("proj_w", [size, self.target_vocab_size], dtype=dtype)
-            w_t = tf.transpose(w)
-            b = tf.get_variable("proj_b", [self.target_vocab_size], dtype=dtype)
-            output_projection = (w, b)
-
-            def sampled_loss(inputs, labels):
-                labels = tf.reshape(labels, [-1, 1])
-                # We need to compute the sampled_softmax_loss using 32bit floats to
-                # avoid numerical instabilities.
-                local_w_t = tf.cast(w_t, tf.float32)
-                local_b = tf.cast(b, tf.float32)
-                local_inputs = tf.cast(inputs, tf.float32)
-                return tf.cast(
-                    tf.nn.sampled_softmax_loss(local_w_t, local_b, local_inputs, labels,
-                                               num_samples, self.target_vocab_size),
-                    dtype)
-
-            softmax_loss_function = sampled_loss
-
-        # Create the internal multi-layer cell for our RNN.
-        single_cell = tf.nn.rnn_cell.GRUCell(size)
-        if use_lstm:
-            single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
-        cell = single_cell
-        # Add drop out if we're not making the forward pass
-        if not forward_only:
-            cell = DropoutWrapper(cell, input_keep_prob=0.8, output_keep_prob=0.8)
-        if num_layers > 1:
-            cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
-
-        # The seq2seq function: we use embedding for the input and attention.
-        def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
-            return tf.nn.seq2seq.embedding_attention_seq2seq(
-                encoder_inputs,
-                decoder_inputs,
-                cell,
-                num_encoder_symbols=source_vocab_size,
-                num_decoder_symbols=target_vocab_size,
-                embedding_size=size,
-                output_projection=output_projection,
-                feed_previous=do_decode,
-                dtype=dtype)
-
-        # Feeds for inputs.
-        self.encoder_inputs = []
-        self.decoder_inputs = []
-        self.target_weights = []
-        for i in xrange(buckets[-1][0]):  # Last bucket is the biggest one.
-            self.encoder_inputs.append(tf.placeholder(tf.int32, shape=[batch_size],
-                                                      name="encoder{0}".format(i)))
-        for i in xrange(buckets[-1][1] + 1):
-            self.decoder_inputs.append(tf.placeholder(tf.int32, shape=[batch_size],
-                                                      name="decoder{0}".format(i)))
-            self.target_weights.append(tf.placeholder(dtype, shape=[batch_size],
-                                                      name="weight{0}".format(i)))
-
-        # Our targets are decoder inputs shifted by one.
-        targets = [self.decoder_inputs[i + 1]
-                   for i in xrange(len(self.decoder_inputs) - 1)]
-
-        # Training outputs and losses.
-        if forward_only:
-            self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
-                self.encoder_inputs, self.decoder_inputs, targets,
-                self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
-                softmax_loss_function=softmax_loss_function)
-            # If we use output projection, we need to project outputs for decoding.
-            if output_projection is not None:
-                for b in xrange(len(buckets)):
-                    self.outputs[b] = [
-                        tf.matmul(output, output_projection[0]) + output_projection[1]
-                        for output in self.outputs[b]
-                    ]
-        else:
-            self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
-                self.encoder_inputs, self.decoder_inputs, targets,
-                self.target_weights, buckets,
-                lambda x, y: seq2seq_f(x, y, False),
-                softmax_loss_function=softmax_loss_function)
-
-        # Gradients and SGD update operation for training the model.
-        params = tf.trainable_variables()
-        if not forward_only:
-            self.gradient_norms = []
-            self.updates = []
-            opt = tf.train.AdadeltaOptimizer(learning_rate=self.learning_rate)  # self.learning_rate)
-            for b in xrange(len(buckets)):
-                gradients = tf.gradients(self.losses[b], params)
-                clipped_gradients, norm = tf.clip_by_global_norm(gradients,
-                                                                 max_gradient_norm)
-                self.gradient_norms.append(norm)
-                self.updates.append(opt.apply_gradients(
-                    zip(clipped_gradients, params), global_step=self.global_step))
-                print("bucket:%s/%d" % (str(b), len(buckets)))
-
-        self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=0)
-
-    def step(self, session, encoder_inputs, decoder_inputs, target_weights,
-             bucket_id, forward_only):
-        """Run a step of the model feeding the given inputs.
-
-        Args:
-          session: tensorflow session to use.
-          encoder_inputs: list of numpy int vectors to feed as encoder inputs.
-          decoder_inputs: list of numpy int vectors to feed as decoder inputs.
-          target_weights: list of numpy float vectors to feed as target weights.
-          bucket_id: which bucket of the model to use.
-          forward_only: whether to do the backward step or only forward.
-
-        Returns:
-          A triple consisting of gradient norm (or None if we did not do backward),
-          average perplexity, and the outputs.
-
-        Raises:
-          ValueError: if length of encoder_inputs, decoder_inputs, or
-            target_weights disagrees with bucket size for the specified bucket_id.
-        """
-        # Check if the sizes match.
-        encoder_size, decoder_size = self.buckets[bucket_id]
-        if len(encoder_inputs) != encoder_size:
-            raise ValueError("Encoder length must be equal to the one in bucket,"
-                             " %d != %d." % (len(encoder_inputs), encoder_size))
-        if len(decoder_inputs) != decoder_size:
-            raise ValueError("Decoder length must be equal to the one in bucket,"
-                             " %d != %d." % (len(decoder_inputs), decoder_size))
-        if len(target_weights) != decoder_size:
-            raise ValueError("Weights length must be equal to the one in bucket,"
-                             " %d != %d." % (len(target_weights), decoder_size))
-
-        # Input feed: encoder inputs, decoder inputs, target_weights, as provided.
-        input_feed = {}
-        for l in xrange(encoder_size):
-            input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
-        for l in xrange(decoder_size):
-            input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
-            input_feed[self.target_weights[l].name] = target_weights[l]
-
-        # Since our targets are decoder inputs shifted by one, we need one more.
-        last_target = self.decoder_inputs[decoder_size].name
-        input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
-
-        # print("step batch_size: %d" % (self.batch_size))
-
-        # Output feed: depends on whether we do a backward step or not.
-        if not forward_only:
-            output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
-                           self.gradient_norms[bucket_id],  # Gradient norm.
-                           self.losses[bucket_id]]  # Loss for this batch.
-        else:
-            output_feed = [self.losses[bucket_id]]  # Loss for this batch.
-            for l in xrange(decoder_size):  # Output logits.
-                output_feed.append(self.outputs[bucket_id][l])
-
-        outputs = session.run(output_feed, input_feed)
-        if not forward_only:
-            return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs.
-        else:
-            return None, outputs[0], outputs[1:]  # No gradient norm, loss, outputs.
-
-    def get_batch(self, data, bucket_id):
-        """Get a random batch of data from the specified bucket, prepare for step.
-
-        To feed data in step(..) it must be a list of batch-major vectors, while
-        data here contains single length-major cases. So the main logic of this
-        function is to re-index data cases to be in the proper format for feeding.
-
-        Args:
-          data: a tuple of size len(self.buckets) in which each element contains
-            lists of pairs of input and output data that we use to create a batch.
-          bucket_id: integer, which bucket to get the batch for.
-
-        Returns:
-          The triple (encoder_inputs, decoder_inputs, target_weights) for
-          the constructed batch that has the proper format to call step(...) later.
-        """
-        encoder_size, decoder_size = self.buckets[bucket_id]
-        encoder_inputs, decoder_inputs = [], []
-
-        # print("batch_size: %d" % (self.batch_size))
-
-        # Get a random batch of encoder and decoder inputs from data,
-        # pad them if needed, reverse encoder inputs and add GO to decoder.
-        for _ in xrange(self.batch_size):
-            encoder_input, decoder_input = random.choice(data[bucket_id])
-
-            # Encoder inputs are padded and then reversed.
-            encoder_pad = [data_utils.PAD_ID] * (encoder_size - len(encoder_input))
-            encoder_inputs.append(list(reversed(encoder_input + encoder_pad)))
-
-            # Decoder inputs get an extra "GO" symbol, and are padded then.
-            decoder_pad_size = decoder_size - len(decoder_input) - 1
-            decoder_inputs.append([data_utils.GO_ID] + decoder_input +
-                                  [data_utils.PAD_ID] * decoder_pad_size)
-
-        # Now we create batch-major vectors from the data selected above.
-        batch_encoder_inputs, batch_decoder_inputs, batch_weights = [], [], []
-
-        # Batch encoder inputs are just re-indexed encoder_inputs.
-        for length_idx in xrange(encoder_size):
-            batch_encoder_inputs.append(
-                np.array([encoder_inputs[batch_idx][length_idx]
-                          for batch_idx in xrange(self.batch_size)], dtype=np.int32))
-
-        # Batch decoder inputs are re-indexed decoder_inputs, we create weights.
-        for length_idx in xrange(decoder_size):
-            batch_decoder_inputs.append(
-                np.array([decoder_inputs[batch_idx][length_idx]
-                          for batch_idx in xrange(self.batch_size)], dtype=np.int32))
-
-            # Create target_weights to be 0 for targets that are padding.
-            batch_weight = np.ones(self.batch_size, dtype=np.float32)
-            for batch_idx in xrange(self.batch_size):
-                # We set weight to 0 if the corresponding target is a PAD symbol.
-                # The corresponding target is decoder_input shifted by 1 forward.
-                if length_idx < decoder_size - 1:
-                    target = decoder_inputs[batch_idx][length_idx + 1]
-                if length_idx == decoder_size - 1 or target == data_utils.PAD_ID:
-                    batch_weight[batch_idx] = 0.0
-            batch_weights.append(batch_weight)
-        return batch_encoder_inputs, batch_decoder_inputs, batch_weights
-
-
-if __name__ == "__main__":
-    tf.app.run()
+'''
+Check out train function and then predict 
+'''

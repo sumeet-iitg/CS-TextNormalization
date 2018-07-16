@@ -2,7 +2,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-class Seq2seq(nn.Module):
+class seq2seq(nn.Module):
     """ Standard sequence-to-sequence architecture with configurable encoder
     and decoder.
 
@@ -35,7 +35,7 @@ class Seq2seq(nn.Module):
     """
 
     def __init__(self, encoder, decoder, decode_function=F.log_softmax):
-        super(Seq2seq, self).__init__()
+        super(seq2seq, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.decode_function = decode_function

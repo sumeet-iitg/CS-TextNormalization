@@ -68,8 +68,7 @@ else:
     train = torchtext.data.TabularDataset(
         path=opt.train_path, format='tsv',
         fields=[('src', src), ('tgt', tgt)],
-        filter_pred=len_filter
-    )
+        filter_pred=len_filter)
     dev = torchtext.data.TabularDataset(
         path=opt.dev_path, format='tsv',
         fields=[('src', src), ('tgt', tgt)],
