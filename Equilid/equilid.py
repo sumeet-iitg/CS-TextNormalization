@@ -35,7 +35,7 @@ import random
 import sys
 import time
 import os.path
-import regex as re
+import re
 import argparse
 
 
@@ -45,9 +45,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 
-
 from glob import glob
-
 from os.path import basename
 
 # import seq2seq_model
@@ -64,16 +62,15 @@ import random
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
-from .EncoderRNN import EncoderRNN
-from .DecoderRNN import DecoderRNN
-from .TopKDecoder import TopKDecoder
-from .Seq2seq import seq2seq
-from .supervised_trainer import SupervisedTrainer
-from .loss import Perplexity
-from .predictor import Predictor
-from .checkpoint import Checkpoint
-from .fields import  SourceField, TargetField
-from .optim import Optimizer
+from EncoderRNN import EncoderRNN
+from DecoderRNN import DecoderRNN
+
+from Seq2seq import seq2seq
+from supervised_trainer import SupervisedTrainer
+from loss import Perplexity
+
+from fields import SourceField, TargetField
+from optim import Optimizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_path', action='store', dest='train_path',
@@ -107,7 +104,6 @@ model_dir = cur_dir + "/../models/70lang"
 # encoding=utf8
 import sys
 
-sys.setdefaultencoding('utf8')
 
 _PAD = b"_PAD"
 _GO = b"_GO"
@@ -125,9 +121,6 @@ _buckets = [ (60, 11), (100, 26), (140, 36)]
 
 FLAGS = parser.parse_args()
 
-'''
-    Load the train, dev and test into torch-text tabular dataset.
-'''
 def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None):
     """Loads the dataset from all sources in torchtext tabulardataset fmt"""
 
@@ -195,50 +188,60 @@ def create_model(specials):
 def train():
     """Train the Equilid Model from character to language-tagged-token data."""
 
-    src_dev_files = FLAGS.data_dir + '/source.ids.dev'
-    src_train_files = FLAGS.data_dir + '/source.ids.train'
-    tgt_dev_files = FLAGS.data_dir + '/target.ids.dev'
-    tgt_train_files = FLAGS.data_dir + '/target.ids.train'
-
     # Ensure we have a directory to write to
-    if not os.path.exists(FLAGS.model_dir):
-        os.makedirs(FLAGS.model_dir)
+    # if not os.path.exists(model_dir):
+    #     os.makedirs(FLAGS.model_dir)
 
-        srcField = SourceField()
-        tgtField = TargetField()
+    max_len = 50
 
-        dev_set = load_dataset(FLAGS.data_dir, srcField, tgtField, 'dev', FLAGS.max_train_data_size)
-        full_train_set = load_dataset(FLAGS.data_dir, srcField, tgtField,'train', FLAGS.max_train_data_size)
-        assert len(dev_set) == len(full_train_set)
+    srcField = SourceField()
+    tgtField = TargetField()
 
-        srcField.build_vocab(train, max_size=50000)
-        tgtField.build_vocab(train, max_size=50000)
+    dev_set = load_dataset(FLAGS.data_dir, 'dev',srcField, tgtField, max_len)
+    full_train_set = load_dataset(FLAGS.data_dir,'train', srcField, tgtField, max_len)
 
-        # Create model.
-        print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-        specials = {"sos_id":tgtField.sos_id, "eos_id":tgtField.eos_id}
-        seq2seqModel = create_model(specials)
+    assert len(dev_set) == len(full_train_set)
 
-        # Prepare loss
-        weight = torch.ones(len(tgtField.vocab))
-        pad = tgtField.vocab.stoi[tgtField.pad_token]
-        loss = Perplexity(weight, pad)
-        if torch.cuda.is_available():
-            loss.cuda()
+    char_vocab_path = FLAGS.data_dir + '/vocab.src'
+    lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
 
-        print("Training model")
+    char_tabular = torchtext.data.TabularDataset(char_vocab_path,format='tsv',
+                                                 fields=[('text', torchtext.data.Field(sequential= False, use_vocab=False)),
+                                                         ('labels',None)])
+    lang_tabular = torchtext.data.TabularDataset(lang_vocab_path,format='tsv',
+                                                 fields=[('text', torchtext.data.Field(sequential= False, use_vocab=True))],
+                                                 use_vocab=True)
 
-        t = SupervisedTrainer(loss=loss, batch_size=32,
-                              checkpoint_every=50,
-                              print_every=10, expt_dir=FLAGS.expt_dir)
-        optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
+    srcField.build_vocab(char_tabular, max_size=50000)
+    tgtField.build_vocab(lang_tabular, max_size=50000)
 
-        for i in range(len(full_train_set)):
-            seq2seq = t.train(seq2seqModel, full_train_set[i],
-                          num_epochs=6, dev_data=dev_set[i],
-                          optimizer=optimizer,
-                          teacher_forcing_ratio=0.5,
-                          resume=FLAGS.resume)
+
+
+    # Create model.
+    print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
+    specials = {"sos_id":tgtField.sos_id, "eos_id":tgtField.eos_id}
+    seq2seqModel = create_model(specials)
+
+    # Prepare loss
+    weight = torch.ones(len(tgtField.vocab))
+    pad = tgtField.vocab.stoi[tgtField.pad_token]
+    loss = Perplexity(weight, pad)
+    if torch.cuda.is_available():
+        loss.cuda()
+
+    print("Training model")
+
+    t = SupervisedTrainer(loss=loss, batch_size=32,
+                          checkpoint_every=50,
+                          print_every=10, expt_dir=FLAGS.expt_dir)
+    optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
+
+    for i in range(len(full_train_set)):
+        seq2seq = t.train(seq2seqModel, full_train_set[i],
+                      num_epochs=6, dev_data=dev_set[i],
+                      optimizer=optimizer,
+                      teacher_forcing_ratio=0.5,
+                      resume=FLAGS.resume)
 
 
 
@@ -594,6 +597,5 @@ def set_param(name, val):
     """
     setattr(FLAGS, name, val)
 
-'''
-Check out train function and then predict 
-'''
+if __name__== "__main__":
+    train()

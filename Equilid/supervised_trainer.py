@@ -8,11 +8,11 @@ import torch
 import torchtext
 from torch import optim
 
-from .Seq2seq import seq2seq
-from .evaluator import Evaluator
-from .loss import NLLLoss
-from .optim import Optimizer
-from .checkpoint import Checkpoint
+from Seq2seq import seq2seq
+from evaluator import Evaluator
+from loss import NLLLoss
+from optim import Optimizer
+from checkpoint import Checkpoint
 
 class SupervisedTrainer(object):
     """ The SupervisedTrainer class helps in setting up a training framework in a
