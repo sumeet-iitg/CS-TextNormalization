@@ -74,9 +74,9 @@ from optim import Optimizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_path', action='store', dest='train_path',
-                    help='Path to train data')
+                    help='Path to train sampleData')
 parser.add_argument('--dev_path', action='store', dest='dev_path',
-                    help='Path to dev data')
+                    help='Path to dev sampleData')
 parser.add_argument('--expt_dir', action='store', dest='expt_dir', default='./experiment',
                     help='Path to experiment directory. If load_checkpoint is True, then path to checkpoint directory has to be provided')
 parser.add_argument('--load_checkpoint', action='store', dest='load_checkpoint',
@@ -87,12 +87,14 @@ parser.add_argument('--resume', action='store_true', dest='resume',
 parser.add_argument('--log-level', dest='log_level',
                     default='info',
                     help='Logging level.')
-parser.add_argument('--learning_rate', action='store', dest='lr', default=0.5, help='Learning rate.')
+parser.add_argument('--learning_rate', action='store', dest='learning_rate', default=0.5, help='Learning rate.')
 parser.add_argument('--learning_rate_decay_factor', action='store', dest='dr', default=0.99,
                           help='Learning rate decays by this much.')
 parser.add_argument('--max_gradient_norm', action='store', dest='max_gradient_norm', default=5.0, help='Clip gradients to this norm.')
 parser.add_argument('--batch_size', action='store',dest='batch_size', default=64, help='Batch size to use during training.')
 parser.add_argument('--size', action='store', dest='size', default=512, help='Size of each model layer.')
+
+parser.add_argument('--num_layers',action='store', dest='num_layers', default=3, help='Number of layers in Encoder and Decoder.' )
 parser.add_argument('--char_vocab_size',action='store', dest='char_vocab_size', default=40000, help='Character vocabulary size.')
 parser.add_argument('--lang_vocab_size',action='store', dest='lang_vocab_size', default=40000, help='Language vocabulary size.')
 parser.add_argument('--data_dir',action='store', dest='data_dir', default='/tmp', help='Data directory')
@@ -186,11 +188,11 @@ def create_model(specials):
 
 
 def train():
-    """Train the Equilid Model from character to language-tagged-token data."""
+    """Train the Equilid Model from character to language-tagged-token sampleData."""
 
     # Ensure we have a directory to write to
-    # if not os.path.exists(model_dir):
-    #     os.makedirs(FLAGS.model_dir)
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
 
     max_len = 50
 
@@ -205,17 +207,18 @@ def train():
     char_vocab_path = FLAGS.data_dir + '/vocab.src'
     lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
 
-    char_tabular = torchtext.data.TabularDataset(char_vocab_path,format='tsv',
-                                                 fields=[('text', torchtext.data.Field(sequential= False, use_vocab=False)),
+    char_tabular = torchtext.datasets.SequenceTaggingDataset(char_vocab_path,
+                                                 fields=[('text', torchtext.data.Field(use_vocab=False)),
                                                          ('labels',None)])
-    lang_tabular = torchtext.data.TabularDataset(lang_vocab_path,format='tsv',
-                                                 fields=[('text', torchtext.data.Field(sequential= False, use_vocab=True))],
-                                                 use_vocab=True)
+    lang_tabular = torchtext.datasets.SequenceTaggingDataset(lang_vocab_path,
+                                                 fields=[('text', torchtext.data.Field(use_vocab=True))])
 
-    srcField.build_vocab(char_tabular, max_size=50000)
-    tgtField.build_vocab(lang_tabular, max_size=50000)
-
-
+    print("char vocab len:{}".format(len(char_tabular)))
+    print("lang vocab len:{}".format(len(lang_tabular)))
+    srcField.build_vocab(char_tabular.text, max_size=50000)
+    tgtField.build_vocab(lang_tabular.text, max_size=50000)
+    print("Source vocab len:{}".format(len(srcField.vocab.stoi)))
+    print("Target vocab len {}".format(len(tgtField.vocab.stoi)))
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
@@ -243,6 +246,7 @@ def train():
                       teacher_forcing_ratio=0.5,
                       resume=FLAGS.resume)
 
+    print("training completed!")
 
 
 def repair(tokens, predictions):
@@ -455,7 +459,7 @@ def to_token_ids(text, char_to_id):
 def initialize_vocabulary(vocabulary_path):
     """Initialize vocabulary from file."""
 
-    # NOTE: the data-to-int conversion uses a +4 offset for indexing due to
+    # NOTE: the sampleData-to-int conversion uses a +4 offset for indexing due to
     # the starting vocabulary.  We prepend the rev_vocab here to recognize
     # this
     rev_vocab = list(_START_VOCAB)
@@ -562,7 +566,7 @@ def initialize_vocabulary(vocabulary_path):
 #         outf = None
 #
 #     if FLAGS.predict_file:
-#         print('Reading data to predict from' + FLAGS.predict_file)
+#         print('Reading sampleData to predict from' + FLAGS.predict_file)
 #         predict_input = tf.gfile.GFile(FLAGS.predict_file, mode="r")
 #     else:
 #         print("No input file specified; reading from STDIN")
