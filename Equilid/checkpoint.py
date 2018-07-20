@@ -17,7 +17,7 @@ class Checkpoint(object):
     Args:
         model (seq2seq): seq2seq model being trained
         optimizer (Optimizer): stores the state of the optimizer
-        epoch (int): current epoch (an epoch is a loop through the full training data)
+        epoch (int): current epoch (an epoch is a loop through the full training sampleData)
         step (int): number of examples seen within the current epoch
         input_vocab (Vocabulary): vocabulary for the input language
         output_vocab (Vocabulary): vocabulary for the output language

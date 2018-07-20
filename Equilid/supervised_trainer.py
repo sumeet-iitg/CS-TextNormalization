@@ -47,6 +47,8 @@ class SupervisedTrainer(object):
         self.batch_size = batch_size
 
         self.logger = logging.getLogger(__name__)
+        self.logger.addHandler(logging.StreamHandler())
+        self.logger.setLevel(logging.DEBUG)
 
     def _train_batch(self, input_variable, input_lengths, target_variable, model, teacher_forcing_ratio):
         loss = self.loss
@@ -73,6 +75,9 @@ class SupervisedTrainer(object):
         epoch_loss_total = 0  # Reset every epoch
 
         device = None if torch.cuda.is_available() else -1
+
+        log.debug("Data Desc: Examples Len:{}, Fields Len:{}".format(len(data.examples),len(data.fields.items())))
+
         batch_iterator = torchtext.data.BucketIterator(
             dataset=data, batch_size=self.batch_size,
             sort=False, sort_within_batch=True,
@@ -81,6 +86,7 @@ class SupervisedTrainer(object):
 
         steps_per_epoch = len(batch_iterator)
         total_steps = steps_per_epoch * n_epochs
+        log.debug("Steps per Epoch:{}".format(steps_per_epoch))
 
         step = start_step
         step_elapsed = 0
@@ -88,6 +94,7 @@ class SupervisedTrainer(object):
             log.debug("Epoch: %d, Step: %d" % (epoch, step))
 
             batch_generator = batch_iterator.__iter__()
+
             # consuming seen batches from previous training
             for _ in range((epoch - 1) * steps_per_epoch, step):
                 next(batch_generator)
@@ -96,9 +103,10 @@ class SupervisedTrainer(object):
             for batch in batch_generator:
                 step += 1
                 step_elapsed += 1
+                log.debug("In step count:%d"%(step))
 
-                input_variables, input_lengths = getattr(batch, seq2seq.src_field_name)
-                target_variables = getattr(batch, seq2seq.tgt_field_name)
+                input_variables, input_lengths = getattr(batch, 'src')
+                target_variables = getattr(batch, 'tgt')
 
                 loss = self._train_batch(input_variables, input_lengths.tolist(), target_variables, model, teacher_forcing_ratio)
 

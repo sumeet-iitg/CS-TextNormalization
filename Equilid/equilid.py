@@ -37,7 +37,7 @@ import time
 import os.path
 import re
 import argparse
-
+import logging
 
 import torch
 import torch.nn as nn
@@ -103,8 +103,9 @@ parser.add_argument('--data_dir',action='store', dest='data_dir', default='/tmp'
 cur_dir = os.path.dirname(os.path.abspath(__file__))
 model_dir = cur_dir + "/../models/70lang"
 
-# encoding=utf8
-import sys
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.DEBUG)
 
 
 _PAD = b"_PAD"
@@ -147,14 +148,16 @@ def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None
                 src_line = src_fp.readline().strip()
                 tgt_line = tgt_fp.readline().strip()
                 while src_line and tgt_line:
-                    src_tgt_fp.write(src_line + '\t' + tgt_line)
+                    src_tgt_fp.write(src_line + '\t' + tgt_line + '\n')
                     src_line = src_fp.readline().strip()
                     tgt_line = tgt_fp.readline().strip()
 
         tabularFile = torchtext.data.TabularDataset(path=src_tgt_combined, format='tsv',
-                        fields=[('chars', srcField),('langs', tgtField)],
-                        filter_pred=lambda x: len(x.chars) < max_len)
+                        fields=[('src', srcField),('tgt', tgtField)],
+                        filter_pred=lambda x: len(x.src) < max_len)
+
         loaded_files.append(tabularFile)
+        logger.debug("FileName:{} Example Len:{}".format(src_tgt_combined, len(tabularFile.examples)))
 
     return loaded_files
 
@@ -223,10 +226,12 @@ def train():
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
     specials = {"sos_id":tgtField.sos_id, "eos_id":tgtField.eos_id}
+    FLAGS.char_vocab_size = len(srcField.vocab.stoi.items())
+    FLAGS.lang_vocab_size = len(tgtField.vocab.stoi.items())
     seq2seqModel = create_model(specials)
 
     # Prepare loss
-    weight = torch.ones(len(tgtField.vocab))
+    weight = torch.ones(FLAGS.lang_vocab_size)
     pad = tgtField.vocab.stoi[tgtField.pad_token]
     loss = Perplexity(weight, pad)
     if torch.cuda.is_available():
@@ -236,7 +241,7 @@ def train():
 
     t = SupervisedTrainer(loss=loss, batch_size=32,
                           checkpoint_every=50,
-                          print_every=10, expt_dir=FLAGS.expt_dir)
+                          print_every=1, expt_dir=FLAGS.expt_dir)
     optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
 
     for i in range(len(full_train_set)):

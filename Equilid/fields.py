@@ -3,7 +3,7 @@ import logging
 import torchtext
 
 class SourceField(torchtext.data.Field):
-    """ Wrapper class of torchtext.data.Field that forces batch_first and include_lengths to be True. """
+    """ Wrapper class of torchtext.sampleData.Field that forces batch_first and include_lengths to be True. """
 
     def __init__(self, **kwargs):
         logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class SourceField(torchtext.data.Field):
         super(SourceField, self).__init__(**kwargs)
 
 class TargetField(torchtext.data.Field):
-    """ Wrapper class of torchtext.data.Field that forces batch_first to be True and prepend <sos> and append <eos> to sequences in preprocessing step.
+    """ Wrapper class of torchtext.sampleData.Field that forces batch_first to be True and prepend <sos> and append <eos> to sequences in preprocessing step.
 
     Attributes:
         sos_id: index of the start of sentence symbol

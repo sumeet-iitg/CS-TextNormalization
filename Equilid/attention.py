@@ -26,7 +26,7 @@ class Attention(nn.Module):
         - **attn** (batch, output_len, input_len): tensor containing attention weights.
 
     Attributes:
-        linear_out (torch.nn.Linear): applies a linear transformation to the incoming data: :math:`y = Ax + b`.
+        linear_out (torch.nn.Linear): applies a linear transformation to the incoming sampleData: :math:`y = Ax + b`.
         mask (torch.Tensor, optional): applies a :math:`-inf` to the indices specified in the `Tensor`.
 
     Examples::
