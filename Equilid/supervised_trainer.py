@@ -48,7 +48,7 @@ class SupervisedTrainer(object):
 
         self.logger = logging.getLogger(__name__)
         self.logger.addHandler(logging.StreamHandler())
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
 
     def _train_batch(self, input_variable, input_lengths, target_variable, model, teacher_forcing_ratio):
         loss = self.loss
@@ -103,7 +103,7 @@ class SupervisedTrainer(object):
             for batch in batch_generator:
                 step += 1
                 step_elapsed += 1
-                log.debug("In step count:%d"%(step))
+                # log.debug("In step count:%d"%(step))
 
                 input_variables, input_lengths = getattr(batch, 'src')
                 target_variables = getattr(batch, 'tgt')
@@ -128,8 +128,8 @@ class SupervisedTrainer(object):
                     Checkpoint(model=model,
                                optimizer=self.optimizer,
                                epoch=epoch, step=step,
-                               input_vocab=data.fields[seq2seq.src_field_name].vocab,
-                               output_vocab=data.fields[seq2seq.tgt_field_name].vocab).save(self.expt_dir)
+                               input_vocab=data.fields['src'].vocab,
+                               output_vocab=data.fields['tgt'].vocab).save(self.expt_dir)
 
             if step_elapsed == 0: continue
 

@@ -241,7 +241,7 @@ def train():
 
     t = SupervisedTrainer(loss=loss, batch_size=32,
                           checkpoint_every=50,
-                          print_every=1, expt_dir=FLAGS.expt_dir)
+                          print_every=20, expt_dir=FLAGS.expt_dir)
     optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
 
     for i in range(len(full_train_set)):
