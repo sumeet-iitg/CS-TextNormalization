@@ -56,11 +56,11 @@ class Evaluator(object):
                 loss.eval_batch(step_output.view(target_variables.size(0), -1), target)
 
                 non_padding = target.ne(pad)
-                correct = seqlist[step].view(-1).eq(target).masked_select(non_padding).sum().item()
+                correct = seqlist[step].view(-1).eq(target).masked_select(non_padding).sum()
                 match += correct
-                total += non_padding.sum().item()
+                total += non_padding.sum()
 
-        if total == 0:
+        if (total == 0).data.cpu().numpy():
             accuracy = float('nan')
         else:
             accuracy = match / total
