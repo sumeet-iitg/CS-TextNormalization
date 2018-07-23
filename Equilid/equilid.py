@@ -71,6 +71,8 @@ from loss import Perplexity
 
 from fields import SourceField, TargetField
 from optim import Optimizer
+from checkpoint import Checkpoint
+from predictor import Predictor
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_path', action='store', dest='train_path',
@@ -161,51 +163,13 @@ def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None
 
     return loaded_files
 
-
-def create_model(specials):
+def create_model():
     """Create translation model and initialize or load parameters in session."""
     # Prepare src char vocabulary and target vocabulary dataset
 
     max_len = 50
-
-    # Initialize model
-    hidden_size = FLAGS.size
-    bidirectional = False
-    encoder = EncoderRNN(FLAGS.char_vocab_size,
-                         max_len,
-                         hidden_size,
-                         n_layers=FLAGS.num_layers,
-                         bidirectional=bidirectional,
-                         variable_lengths=True)
-    decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
-                         dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
-                         eos_id=specials["eos_id"], sos_id=specials["sos_id"], n_layers=FLAGS.num_layers)
-    seq2seqModel = seq2seq(encoder, decoder)
-    if torch.cuda.is_available():
-        seq2seqModel.cuda()
-
-    for param in seq2seqModel.parameters():
-        param.data.uniform_(-0.08, 0.08)
-
-    return seq2seqModel
-
-
-def train():
-    """Train the Equilid Model from character to language-tagged-token sampleData."""
-
-    # Ensure we have a directory to write to
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-
-    max_len = 50
-
     srcField = SourceField()
     tgtField = TargetField()
-
-    dev_set = load_dataset(FLAGS.data_dir, 'dev',srcField, tgtField, max_len)
-    full_train_set = load_dataset(FLAGS.data_dir,'train', srcField, tgtField, max_len)
-
-    assert len(dev_set) == len(full_train_set)
 
     char_vocab_path = FLAGS.data_dir + '/vocab.src'
     lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
@@ -228,24 +192,59 @@ def train():
     specials = {"sos_id":tgtField.sos_id, "eos_id":tgtField.eos_id}
     FLAGS.char_vocab_size = len(srcField.vocab.stoi.items())
     FLAGS.lang_vocab_size = len(tgtField.vocab.stoi.items())
-    seq2seqModel = create_model(specials)
+
+    # Initialize model
+    hidden_size = FLAGS.size
+    bidirectional = False
+    encoder = EncoderRNN(FLAGS.char_vocab_size,
+                         max_len,
+                         hidden_size,
+                         n_layers=FLAGS.num_layers,
+                         bidirectional=bidirectional,
+                         variable_lengths=True)
+    decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
+                         dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
+                         eos_id=specials["eos_id"], sos_id=specials["sos_id"], n_layers=FLAGS.num_layers)
+    seq2seqModel = seq2seq(encoder, decoder)
+    if torch.cuda.is_available():
+        seq2seqModel.cuda()
+
+    for param in seq2seqModel.parameters():
+        param.data.uniform_(-0.08, 0.08)
 
     # Prepare loss
     weight = torch.ones(FLAGS.lang_vocab_size)
     pad = tgtField.vocab.stoi[tgtField.pad_token]
     loss = Perplexity(weight, pad)
+
+    return seq2seqModel, loss, srcField, tgtField
+
+
+def train():
+    """Train the Equilid Model from character to language-tagged-token sampleData."""
+
+    # Ensure we have a directory to write to
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+
+    max_len = 50
+    seq2seqModel, loss, srcField, tgtField = create_model()
+
+    dev_set = load_dataset(FLAGS.data_dir, 'dev',srcField, tgtField, max_len)
+    full_train_set = load_dataset(FLAGS.data_dir,'train', srcField, tgtField, max_len)
+    assert len(dev_set) == len(full_train_set)
+
     if torch.cuda.is_available():
         loss.cuda()
 
     print("Training model")
-
     t = SupervisedTrainer(loss=loss, batch_size=32,
                           checkpoint_every=50,
                           print_every=20, expt_dir=FLAGS.expt_dir)
     optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
 
     for i in range(len(full_train_set)):
-        seq2seq = t.train(seq2seqModel, full_train_set[i],
+        seq2seqModel = t.train(seq2seqModel, full_train_set[i],
                       num_epochs=6, dev_data=dev_set[i],
                       optimizer=optimizer,
                       teacher_forcing_ratio=0.5,
@@ -441,7 +440,7 @@ CJK_PROXY = str(ord(u"\u4E00"))
 HANGUL_PROXY = str(ord(u"\uAC00"))
 
 
-def to_token_ids(text, char_to_id):
+def to_token_ids(text, char_to_id, UNK_ID):
     """
     Converts input text into its IDs based on a defined vocabularly.
     """
@@ -476,91 +475,58 @@ def initialize_vocabulary(vocabulary_path):
     vocab = dict([(x, y) for (y, x) in enumerate(rev_vocab)])
     return vocab, rev_vocab
 
-#
-# def get_langs(text):
-#     token_langs = classify(text)
-#     langs = set([x for x in token_langs if len(x) == 3])
-#     return langs
+
+def get_langs(text):
+    token_langs = classify(text)
+    langs = set([x for x in token_langs if len(x) == 3])
+    return langs
 
 
-# The lazily-loaded classifier, which is a tuple of the model
-# classifier = None
+def load_model():
 
-# def classify(text):
-#     """
-#         text is by default treated as unicode in Python 3
-#     """
-#     global classifier
-#
-#     if classifier is None:
-#         # Prediction uses a small batch size
-#         FLAGS.batch_size = 1
-#         load_model()
-#
-#     # Unpack the classifier into the things we need
-#     sess, model, char_vocab, rev_char_vocab, lang_vocab, rev_lang_vocab = classifier
-#
-#     # Convert the input into character IDs
-#     token_ids = to_token_ids(text, char_vocab)
-#     # print(token_ids)
-#
-#     # Which bucket does it belong to?
-#     possible_buckets = [b for b in xrange(len(_buckets))
-#                         if _buckets[b][0] > len(token_ids)]
-#     if len(possible_buckets) == 0:
-#         # Stick it in the last bucket anyway, even if it's too long.
-#         # Gotta predict something! #YOLO.  It might be worth logging
-#         # to the user here if we want to be super paranoid though
-#         possible_buckets.append(len(_buckets) - 1)
-#
-#     bucket_id = min(possible_buckets)
-#     # Get a 1-element batch to feed the sentence to the model.
-#     #
-#     # NB: Could we speed things up by pushing in multiple instances
-#     # to a single batch?
-#
-#     # This is the standard way of feeding stuff into tensorflow
-#     encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-#         {bucket_id: [(token_ids, [])]}, bucket_id)
-#
-#     # Get output logits for the sentence.
-#     _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-#                                      target_weights, bucket_id, True)
-#
-#     # This is a greedy decoder - outputs are just argmaxes of output_logits.
-#     outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-#
-#     # If there is an EOS symbol in outputs, cut them at that point.
-#     if EOS_ID in outputs:
-#         outputs = outputs[:outputs.index(EOS_ID)]
-#
-#     predicted_labels = []
-#     try:
-#         predicted_labels = [tf.compat.as_str(rev_lang_vocab[output]) for output in outputs]
-#     except BaseException as e:
-#         print(repr(e))
-#
-#     # Ensure we have predictions for each token
-#     predictions = repair(text.split(), predicted_labels)
-#
-#     return predictions
+    logging.info("loading checkpoint from {}".format(
+        os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, FLAGS.load_checkpoint)))
+    checkpoint_path = os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, FLAGS.load_checkpoint)
+    checkpoint = Checkpoint.load(checkpoint_path)
+    seq2seq = checkpoint.model
+    # these are vocab classes with members stoi and itos
+    input_vocab = checkpoint.input_vocab
+    output_vocab = checkpoint.output_vocab
+    classifier = (seq2seq, input_vocab, output_vocab)
 
+    return classifier
 
-# def load_model():
-#     global classifier
-#     # Create model and load parameters.
-#     model = create_model()
-#
-#     print("Loading vocabs")
-#     # Load vocabularies.
-#     char_vocab_path = FLAGS.model_dir + '/vocab.src'
-#     lang_vocab_path = FLAGS.model_dir + '/vocab.tgt'
-#     char_vocab, rev_char_vocab = initialize_vocabulary(char_vocab_path)
-#     lang_vocab, rev_lang_vocab = initialize_vocabulary(lang_vocab_path)
-#
-#     classifier = (model, char_vocab, rev_char_vocab, lang_vocab, rev_lang_vocab)
-#
-#
+# The lazily-loaded classifier which is a tuple of the model, input_vocab and output_vocab
+classifier = None
+# The predictor class constructed on the classifier, input and output vocab.
+predictor = None
+
+def classify(text):
+    """
+        text is by default treated as unicode in Python 3
+    """
+    global classifier
+    global predictor
+
+    if classifier is None:
+        # Prediction uses a small batch size
+        FLAGS.batch_size = 1
+        classifier = load_model()
+
+    # Unpack the classifier into the things we need
+    seq2seqModel, char_vocab, lang_vocab = classifier
+
+    if predictor is None:
+        predictor = Predictor(seq2seqModel, char_vocab, lang_vocab)
+
+    seq = text.strip().split()
+    predicted_labels = predictor.predict(seq)
+
+    # Ensure we have predictions for each token
+    predictions = repair(text.split(), predicted_labels)
+
+    return predictions
+
 # def predict():
 #     # NB: is there a safer way to do this with a using statement if the file
 #     # is optionally written to but without having to buffer the output?
