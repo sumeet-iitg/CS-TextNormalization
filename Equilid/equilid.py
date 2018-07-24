@@ -483,10 +483,14 @@ def get_langs(text):
     return langs
 
 
-def load_model(checkpoint_dir):
+def load_model():
+
+    if FLAGS.load_checkpoint is None:
+        FLAGS.load_checkpoint = Checkpoint.get_latest_checkpoint(FLAGS.expt_dir)
+
     logging.info("loading checkpoint from {}".format(
-        os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, checkpoint_dir)))
-    checkpoint_path = os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, checkpoint_dir)
+    os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, FLAGS.load_checkpoint)))
+    checkpoint_path = os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, FLAGS.load_checkpoint)
     checkpoint = Checkpoint.load(checkpoint_path)
     seq2seq = checkpoint.model
     # these are vocab classes with members stoi and itos
@@ -511,10 +515,7 @@ def classify(text):
     if classifier is None:
         # Prediction uses a small batch size
         FLAGS.batch_size = 1
-        checkpoint_dir = 'final'
-        if not FLAGS.load_checkpoint is None:
-            checkpoint_dir = FLAGS.load_checkpoint
-        classifier = load_model(checkpoint_dir)
+        classifier = load_model()
 
     # Unpack the classifier into the things we need
     seq2seqModel, char_vocab, lang_vocab = classifier
