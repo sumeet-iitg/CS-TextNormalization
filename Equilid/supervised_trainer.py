@@ -125,11 +125,14 @@ class SupervisedTrainer(object):
 
                 # Checkpoint
                 if step % self.checkpoint_every == 0 or step == total_steps:
+                    save_dir = self.expt_dir
+                    if step == total_steps:
+                        save_dir = os.path.join(self.expt_dir,'final')
                     Checkpoint(model=model,
                                optimizer=self.optimizer,
                                epoch=epoch, step=step,
                                input_vocab=data.fields['src'].vocab,
-                               output_vocab=data.fields['tgt'].vocab).save(self.expt_dir)
+                               output_vocab=data.fields['tgt'].vocab).save(save_dir)
 
             if step_elapsed == 0: continue
 

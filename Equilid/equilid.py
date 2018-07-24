@@ -89,6 +89,7 @@ parser.add_argument('--resume', action='store_true', dest='resume',
 parser.add_argument('--log-level', dest='log_level',
                     default='info',
                     help='Logging level.')
+parser.add_argument('--train_mode', action='store', dest='train_mode', default=True, help='Set to True if Training from scratch')
 parser.add_argument('--learning_rate', action='store', dest='learning_rate', default=0.5, help='Learning rate.')
 parser.add_argument('--learning_rate_decay_factor', action='store', dest='dr', default=0.99,
                           help='Learning rate decays by this much.')
@@ -482,10 +483,10 @@ def get_langs(text):
     return langs
 
 
-def load_model(checkpoint_timestamp):
+def load_model(checkpoint_dir):
     logging.info("loading checkpoint from {}".format(
-        os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, checkpoint_timestamp)))
-    checkpoint_path = os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, checkpoint_timestamp)
+        os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, checkpoint_dir)))
+    checkpoint_path = os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, checkpoint_dir)
     checkpoint = Checkpoint.load(checkpoint_path)
     seq2seq = checkpoint.model
     # these are vocab classes with members stoi and itos
@@ -510,7 +511,10 @@ def classify(text):
     if classifier is None:
         # Prediction uses a small batch size
         FLAGS.batch_size = 1
-        classifier = load_model(FLAGS.load_checkpoint)
+        checkpoint_dir = 'final'
+        if not FLAGS.load_checkpoint is None:
+            checkpoint_dir = FLAGS.load_checkpoint
+        classifier = load_model(checkpoint_dir)
 
     # Unpack the classifier into the things we need
     seq2seqModel, char_vocab, lang_vocab = classifier
@@ -572,5 +576,6 @@ def set_param(name, val):
     setattr(FLAGS, name, val)
 
 if __name__== "__main__":
-    train()
+    if FLAGS.train_mode:
+        train()
     classify("how are you")
