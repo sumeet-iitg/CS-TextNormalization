@@ -89,7 +89,9 @@ parser.add_argument('--resume', action='store_true', dest='resume',
 parser.add_argument('--log-level', dest='log_level',
                     default='info',
                     help='Logging level.')
-parser.add_argument('--train_mode', action='store', dest='train_mode', default=True, help='Set to True if Training from scratch')
+parser.add_argument('--train', dest='train_mode', action='store_true')
+parser.add_argument('--no-train', dest='train_mode', action='store_false')
+parser.set_defaults(train_mode=True)
 parser.add_argument('--learning_rate', action='store', dest='learning_rate', default=0.5, help='Learning rate.')
 parser.add_argument('--learning_rate_decay_factor', action='store', dest='dr', default=0.99,
                           help='Learning rate decays by this much.')
@@ -146,6 +148,7 @@ def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None
         src = data_dir + '/' + p + '.source.' + data_type + '.ids'
         tgt = data_dir + '/' + p + '.target.' + data_type + '.ids'
         src_tgt_combined = data_dir + '/' + p + '.source_target.' + data_type + '.ids'
+        #joining the source and target into a single file for easier time reading with torchtext
         if not os.path.exists(src_tgt_combined):
             with open(src, 'r') as src_fp, open(tgt, 'r') as tgt_fp, open(src_tgt_combined, 'w') as src_tgt_fp:
                 src_line = src_fp.readline().strip()
@@ -162,6 +165,7 @@ def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None
         loaded_files.append(tabularFile)
         logger.debug("FileName:{} Example Len:{}".format(src_tgt_combined, len(tabularFile.examples)))
 
+    logger.debug("Files loaded count:{}".format(len(loaded_files)))
     return loaded_files
 
 def create_model():
@@ -179,7 +183,8 @@ def create_model():
                                                  fields=[('text', torchtext.data.Field(use_vocab=False)),
                                                          ('labels',None)])
     lang_tabular = torchtext.datasets.SequenceTaggingDataset(lang_vocab_path,
-                                                 fields=[('text', torchtext.data.Field(use_vocab=True))])
+                                                 fields=[('text', torchtext.data.Field(use_vocab=True,
+                                                            init_token=tgtField.SYM_SOS,eos_token=tgtField.SYM_EOS))])
 
     print("char vocab len:{}".format(len(char_tabular)))
     print("lang vocab len:{}".format(len(lang_tabular)))
@@ -190,7 +195,6 @@ def create_model():
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-    specials = {"sos_id":tgtField.sos_id, "eos_id":tgtField.eos_id}
     FLAGS.char_vocab_size = len(srcField.vocab.stoi.items())
     FLAGS.lang_vocab_size = len(tgtField.vocab.stoi.items())
 
@@ -205,7 +209,7 @@ def create_model():
                          variable_lengths=True)
     decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
                          dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
-                         eos_id=specials["eos_id"], sos_id=specials["sos_id"], n_layers=FLAGS.num_layers)
+                         eos_id=tgtField.eos_id, sos_id=tgtField.sos_id, n_layers=FLAGS.num_layers)
     seq2seqModel = seq2seq(encoder, decoder)
     if torch.cuda.is_available():
         seq2seqModel.cuda()
@@ -484,13 +488,12 @@ def get_langs(text):
 
 
 def load_model():
-
-    if FLAGS.load_checkpoint is None:
-        FLAGS.load_checkpoint = Checkpoint.get_latest_checkpoint(FLAGS.expt_dir)
-
-    logging.info("loading checkpoint from {}".format(
-    os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, FLAGS.load_checkpoint)))
-    checkpoint_path = os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, FLAGS.load_checkpoint)
+    checkpoint_path = ""
+    if not FLAGS.load_checkpoint is None:
+        checkpoint_path = os.path.join(FLAGS.expt_dir, Checkpoint.CHECKPOINT_DIR_NAME, FLAGS.load_checkpoint)
+    else:
+        checkpoint_path = Checkpoint.get_latest_checkpoint(FLAGS.expt_dir)
+    logging.info("loading checkpoint from {}".format(checkpoint_path))
     checkpoint = Checkpoint.load(checkpoint_path)
     seq2seq = checkpoint.model
     # these are vocab classes with members stoi and itos
@@ -524,11 +527,12 @@ def classify(text):
         predictor = Predictor(seq2seqModel, char_vocab, lang_vocab)
 
     seq = text.strip().split()
+
     predicted_labels = predictor.predict(seq)
 
     # Ensure we have predictions for each token
     predictions = repair(text.split(), predicted_labels)
-
+    # print(predictions)
     return predictions
 
 # def predict():

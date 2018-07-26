@@ -202,7 +202,7 @@ class DecoderRNN(BaseRNN):
         if inputs is None:
             if teacher_forcing_ratio > 0:
                 raise ValueError("Teacher forcing has to be disabled (set 0) when no inputs is provided.")
-            inputs = torch.LongTensor([self.sos_id] * batch_size).view(batch_size, 1)
+            inputs = Variable(torch.LongTensor([self.sos_id] * batch_size).view(batch_size, 1))
             if torch.cuda.is_available():
                 inputs = inputs.cuda()
             max_length = self.max_length

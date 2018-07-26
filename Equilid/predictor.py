@@ -23,7 +23,7 @@ class Predictor(object):
 
     def get_decoder_features(self, src_seq):
         # vocab.stoi is a default dict which will return unk_id for an unknown token
-        src_id_seq = torch.LongTensor([self.src_vocab.stoi[tok] for tok in src_seq]).view(1, -1)
+        src_id_seq = Variable(torch.LongTensor([self.src_vocab.stoi[tok] for tok in src_seq]).view(1, -1))
         if torch.cuda.is_available():
             src_id_seq = src_id_seq.cuda()
 
@@ -45,7 +45,9 @@ class Predictor(object):
 
         length = other['length'][0]
 
+        print("prediction length:{}".format(length))
         tgt_id_seq = [other['sequence'][di][0].data[0] for di in range(length)]
+        print("target id sequence:{}".format(tgt_id_seq))
         tgt_seq = [self.tgt_vocab.itos[tok] for tok in tgt_id_seq]
         return tgt_seq
 
