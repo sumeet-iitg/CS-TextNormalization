@@ -168,35 +168,65 @@ def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None
     logger.debug("Files loaded count:{}".format(len(loaded_files)))
     return loaded_files
 
+def get_vocab(vocab_file_path):
+    itos = []
+
+    with open(vocab_file_path) as char_fp:
+        symbol = char_fp.readline().strip()
+        while symbol:
+            itos.append(char_fp.readline().strip())
+            symbol = char_fp.readline().strip()
+
+    specials = ['<unk>', '<sos>', '<eos>', '<pad>']
+    itos += specials
+    stoi = {sym:i for i,sym in enumerate(itos)}
+
+    return itos,stoi
+
 def create_model():
     """Create translation model and initialize or load parameters in session."""
     # Prepare src char vocabulary and target vocabulary dataset
 
     max_len = 50
+    char_vocab_path = FLAGS.data_dir + '/char_vocab.src'
+    lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
+
+    char_itos, char_stoi = get_vocab(char_vocab_path)
+    lang_itos, lang_stoi = get_vocab(lang_vocab_path)
+
+    class vocab_cls(object):
+        def __init__(self, itos, stoi):
+            self.itos = itos
+            self.stoi = stoi
+
+    # char_tabular = torchtext.datasets.SequenceTaggingDataset(char_vocab_path,
+    #                                              fields=[('text', torchtext.data.Field(use_vocab=False)),
+    #                                                      ('labels',None)])
+    # lang_tabular = torchtext.datasets.SequenceTaggingDataset(lang_vocab_path,
+    #                                              fields=[('text', torchtext.data.Field(use_vocab=False,
+    #                                                                                    init_token=tgtField.SYM_SOS,
+    #                                                                                    eos_token=tgtField.SYM_EOS))])
+    #
+    # print("char vocab len:{}".format(len(char_tabular)))
+    # print("lang vocab len:{}".format(len(lang_tabular)))
+    # # print("verifying char fields:{}".format(char_tabular.fields))
+    # print("verifying lang fields:{}".format(lang_tabular.fields))
+    # srcField.build_vocab(char_tabular.text, max_size=50000)
+    # tgtField.build_vocab(lang_tabular.text, max_size=50000)
+    # print("Source vocab len:{}".format(len(srcField.vocab.stoi)))
+    # print("Target vocab itos:{} and stoi:{}".format(tgtField.vocab.itos,tgtField.vocab.stoi))
+
+    # Create model.
+    # print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
+    FLAGS.char_vocab_size = len(char_itos)
+    FLAGS.lang_vocab_size = len(lang_itos)
+
     srcField = SourceField()
     tgtField = TargetField()
 
-    char_vocab_path = FLAGS.data_dir + '/vocab.src'
-    lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
 
-    char_tabular = torchtext.datasets.SequenceTaggingDataset(char_vocab_path,
-                                                 fields=[('text', torchtext.data.Field(use_vocab=False)),
-                                                         ('labels',None)])
-    lang_tabular = torchtext.datasets.SequenceTaggingDataset(lang_vocab_path,
-                                                 fields=[('text', torchtext.data.Field(use_vocab=True,
-                                                            init_token=tgtField.SYM_SOS,eos_token=tgtField.SYM_EOS))])
-
-    print("char vocab len:{}".format(len(char_tabular)))
-    print("lang vocab len:{}".format(len(lang_tabular)))
-    srcField.build_vocab(char_tabular.text, max_size=50000)
-    tgtField.build_vocab(lang_tabular.text, max_size=50000)
-    print("Source vocab len:{}".format(len(srcField.vocab.stoi)))
-    print("Target vocab len {}".format(len(tgtField.vocab.stoi)))
-
-    # Create model.
-    print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-    FLAGS.char_vocab_size = len(srcField.vocab.stoi.items())
-    FLAGS.lang_vocab_size = len(tgtField.vocab.stoi.items())
+    srcField.vocab = vocab_cls(char_itos, char_stoi)
+    tgtField.vocab = vocab_cls(lang_itos, lang_stoi)
 
     # Initialize model
     hidden_size = FLAGS.size
@@ -209,7 +239,8 @@ def create_model():
                          variable_lengths=True)
     decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
                          dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
-                         eos_id=tgtField.eos_id, sos_id=tgtField.sos_id, n_layers=FLAGS.num_layers)
+                         eos_id=lang_stoi['<eos>'], sos_id=lang_stoi['<sos>'], n_layers=FLAGS.num_layers)
+
     seq2seqModel = seq2seq(encoder, decoder)
     if torch.cuda.is_available():
         seq2seqModel.cuda()
@@ -219,8 +250,8 @@ def create_model():
 
     # Prepare loss
     weight = torch.ones(FLAGS.lang_vocab_size)
-    pad = tgtField.vocab.stoi[tgtField.pad_token]
-    loss = Perplexity(weight, pad)
+
+    loss = Perplexity(weight, lang_stoi['<pad>'])
 
     return seq2seqModel, loss, srcField, tgtField
 

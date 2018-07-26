@@ -52,7 +52,7 @@ class SupervisedTrainer(object):
 
     def _train_batch(self, input_variable, input_lengths, target_variable, model, teacher_forcing_ratio):
         loss = self.loss
-        self.logger.debug("Input Variable:{}, Target Variable:{}".format(input_variable,target_variable))
+        # self.logger.debug("Input Variable:{}, Target Variable:{}".format(input_variable,target_variable))
         # Forward propagation
         decoder_outputs, decoder_hidden, other = model(input_variable, input_lengths, target_variable,
                                                        teacher_forcing_ratio=teacher_forcing_ratio)
