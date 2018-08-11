@@ -178,7 +178,8 @@ def get_vocab(vocab_file_path):
             itos.append(line.split("\t")[0].strip())
 
     # setting the default-dict value in stoi for some unknown character
-    stoi = defaultdict(lambda: len(itos))
+    # stoi = defaultdict(lambda: len(itos))
+    stoi = {}
     for i, sym in enumerate(itos):
         stoi[str(sym)] = i
     return itos, stoi
@@ -256,11 +257,11 @@ def create_model():
     srcField.set_specials(specials)
     tgtField.set_specials(specials)
 
-    logger.debug("char itos:{}".format(char_itos))
-    logger.debug("char stoi:{}".format(char_stoi))
+    logger.debug("char itos:{}".format(srcField.vocab.itos))
+    logger.debug("char stoi:{}".format(srcField.vocab.stoi))
 
-    logger.debug("lang itos:{}".format(lang_index_itos))
-    logger.debug("lang stoi:{}".format(lang_index_stoi))
+    logger.debug("lang itos:{}".format(tgtField.vocab.itos))
+    logger.debug("lang stoi:{}".format(tgtField.vocab.stoi))
 
     # Initialize model
     hidden_size = FLAGS.size
@@ -273,7 +274,7 @@ def create_model():
                          variable_lengths=True)
     decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
                          dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
-                         eos_id=lang_index_stoi['<eos>'], sos_id=lang_index_stoi['<sos>'], n_layers=FLAGS.num_layers)
+                         eos_id=tgtField.vocab.stoi[tgtField.eos_token], sos_id=tgtField.vocab.stoi[tgtField.sos_token], n_layers=FLAGS.num_layers)
 
     seq2seqModel = seq2seq(encoder, decoder)
     if torch.cuda.is_available():

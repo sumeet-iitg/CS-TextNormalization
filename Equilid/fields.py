@@ -59,8 +59,8 @@ class TargetField(torchtext.data.Field):
         :param specials = dict['spl_var':spl_string]
         :return: None
         '''
-        for spl_var,spl_symbol in specials:
-            self.spl_var = spl_symbol
+        for spl_var,spl_symbol in specials.items():
+            setattr(self, spl_var, spl_symbol)
 
     def build_vocab(self, *args, **kwargs):
         super(TargetField, self).build_vocab(*args, **kwargs)
