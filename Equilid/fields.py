@@ -17,6 +17,15 @@ class SourceField(torchtext.data.Field):
 
         super(SourceField, self).__init__(**kwargs)
 
+    def set_specials(self, specials):
+        '''
+        use this when you don't want to build the whole vocab, but just wish to have special constants
+        :param specials = dict['spl_var':spl_string]
+        :return: None
+        '''
+        for spl_var,spl_symbol in specials.items():
+            setattr(self,spl_var,spl_symbol)
+
 class TargetField(torchtext.data.Field):
     """ Wrapper class of torchtext.sampleData.Field that forces batch_first to be True and prepend <sos> and append <eos> to sequences in preprocessing step.
 
@@ -44,7 +53,19 @@ class TargetField(torchtext.data.Field):
         self.eos_id = None
         super(TargetField, self).__init__(**kwargs)
 
+    def set_specials(self, specials):
+        '''
+        use this when you don't want to build the whole vocab, but just wish to have special constants
+        :param specials = dict['spl_var':spl_string]
+        :return: None
+        '''
+        for spl_var,spl_symbol in specials:
+            self.spl_var = spl_symbol
+
     def build_vocab(self, *args, **kwargs):
         super(TargetField, self).build_vocab(*args, **kwargs)
         self.sos_id = self.vocab.stoi[self.SYM_SOS]
         self.eos_id = self.vocab.stoi[self.SYM_EOS]
+
+
+

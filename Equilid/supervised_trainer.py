@@ -52,7 +52,10 @@ class SupervisedTrainer(object):
 
     def _train_batch(self, input_variable, input_lengths, target_variable, model, teacher_forcing_ratio):
         loss = self.loss
-        # self.logger.debug("Input Variable:{}, Target Variable:{}".format(input_variable,target_variable))
+
+        self.logger.debug("Input Variable:{}, Target Variable:{}".format(input_variable, target_variable))
+        self.logger.debug("Input Lengths:{}".format(input_lengths))
+
         # Forward propagation
         decoder_outputs, decoder_hidden, other = model(input_variable, input_lengths, target_variable,
                                                        teacher_forcing_ratio=teacher_forcing_ratio)
@@ -79,8 +82,7 @@ class SupervisedTrainer(object):
 
         log.debug("Data Desc: Examples Len:{}, Fields Len:{}".format(len(data.examples),len(data.fields.items())))
 
-        batch_iterator = torchtext.data.BucketIterator(
-            dataset=data, batch_size=self.batch_size,
+        batch_iterator = torchtext.data.BucketIterator(dataset=data, batch_size=self.batch_size,
             sort=False, sort_within_batch=True,
             sort_key=lambda x: len(x.src),
             device=device, repeat=False)
@@ -190,6 +192,7 @@ class SupervisedTrainer(object):
 
         self.logger.info("Optimizer: %s, Scheduler: %s" % (self.optimizer.optimizer, self.optimizer.scheduler))
 
+        # in this case the data is the tabular dataset object
         self._train_epoches(data, model, num_epochs,
                             start_epoch, step, dev_data=dev_data,
                             teacher_forcing_ratio=teacher_forcing_ratio)

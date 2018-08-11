@@ -73,6 +73,7 @@ from fields import SourceField, TargetField
 from optim import Optimizer
 from checkpoint import Checkpoint
 from predictor import Predictor
+from collections import defaultdict
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_path', action='store', dest='train_path',
@@ -162,6 +163,7 @@ def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None
                         fields=[('src', srcField),('tgt', tgtField)],
                         filter_pred=lambda x: len(x.src) < max_len)
 
+        # debug tip: write another function here to see if it is getting read properly
         loaded_files.append(tabularFile)
         logger.debug("FileName:{} Example Len:{}".format(src_tgt_combined, len(tabularFile.examples)))
 
@@ -172,32 +174,56 @@ def get_vocab(vocab_file_path):
     itos = []
 
     with open(vocab_file_path) as char_fp:
-        symbol = char_fp.readline().strip()
-        while symbol:
-            itos.append(char_fp.readline().strip())
-            symbol = char_fp.readline().strip()
+        for line in char_fp:
+            itos.append(line.split("\t")[0].strip())
 
-    specials = ['<unk>', '<sos>', '<eos>', '<pad>']
-    itos += specials
-    stoi = {sym:i for i,sym in enumerate(itos)}
-
-    return itos,stoi
+    # setting the default-dict value in stoi for some unknown character
+    stoi = defaultdict(lambda: len(itos))
+    for i, sym in enumerate(itos):
+        stoi[str(sym)] = i
+    return itos, stoi
 
 def create_model():
     """Create translation model and initialize or load parameters in session."""
     # Prepare src char vocabulary and target vocabulary dataset
 
     max_len = 50
-    char_vocab_path = FLAGS.data_dir + '/char_vocab.src'
+    char_vocab_path = FLAGS.data_dir + '/vocab_src.dict'
     lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
-
-    char_itos, char_stoi = get_vocab(char_vocab_path)
-    lang_itos, lang_stoi = get_vocab(lang_vocab_path)
 
     class vocab_cls(object):
         def __init__(self, itos, stoi):
             self.itos = itos
             self.stoi = stoi
+
+    char_itos, char_stoi = get_vocab(char_vocab_path)
+    lang_itos, lang_stoi = get_vocab(lang_vocab_path)
+
+    charSpecialsId = len(char_itos)
+    langSpecialsId = len(lang_itos)
+
+    # In target file for language we only see indices of the language
+    # However, the language dict here maps from string to index
+    # If we pass this dict as vocab to the torchtext.bucketiterator later,
+    # it  causes problems during training because bucketiterator
+    # will try to lookup the language code numbers read from the target file
+    # within the vocab, which won't be there.
+    # Hence creating a one-to-one mapping for the indices in lang
+    lang_index_stoi = defaultdict(lambda: langSpecialsId)
+    for k,v in lang_stoi.items():
+        lang_index_stoi[v] = v
+    lang_index_itos = list(lang_stoi.values())
+
+    # need to have special ids for unk, sos and eos, etc.
+    specials = {'unk_token':'<unk>','sos_token':'<sos>','eos_token':'<eos>','pad_token':'<pad>'}
+
+    for _, spl_symbol in specials.items():
+        char_itos.append(charSpecialsId)
+        char_stoi[spl_symbol] = charSpecialsId
+        lang_index_itos.append(langSpecialsId)
+        lang_index_stoi[spl_symbol] = langSpecialsId
+        langSpecialsId += 1
+        charSpecialsId += 1
 
     # char_tabular = torchtext.datasets.SequenceTaggingDataset(char_vocab_path,
     #                                              fields=[('text', torchtext.data.Field(use_vocab=False)),
@@ -219,14 +245,22 @@ def create_model():
     # Create model.
     # print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
     FLAGS.char_vocab_size = len(char_itos)
-    FLAGS.lang_vocab_size = len(lang_itos)
+    FLAGS.lang_vocab_size = len(lang_index_itos)
+    print("Char vocab size:{} Lang vocab size:{}".format(FLAGS.char_vocab_size, FLAGS.lang_vocab_size))
 
-    srcField = SourceField()
-    tgtField = TargetField()
-
-
+    srcField = SourceField(use_vocab=True)
+    tgtField = TargetField(use_vocab=True)
+    tgt_label_map = vocab_cls(lang_itos, lang_stoi)
     srcField.vocab = vocab_cls(char_itos, char_stoi)
-    tgtField.vocab = vocab_cls(lang_itos, lang_stoi)
+    tgtField.vocab = vocab_cls(lang_index_itos, lang_index_stoi)
+    srcField.set_specials(specials)
+    tgtField.set_specials(specials)
+
+    logger.debug("char itos:{}".format(char_itos))
+    logger.debug("char stoi:{}".format(char_stoi))
+
+    logger.debug("lang itos:{}".format(lang_index_itos))
+    logger.debug("lang stoi:{}".format(lang_index_stoi))
 
     # Initialize model
     hidden_size = FLAGS.size
@@ -239,7 +273,7 @@ def create_model():
                          variable_lengths=True)
     decoder = DecoderRNN(FLAGS.lang_vocab_size, max_len, hidden_size,
                          dropout_p=0.2, use_attention=True, bidirectional=bidirectional,
-                         eos_id=lang_stoi['<eos>'], sos_id=lang_stoi['<sos>'], n_layers=FLAGS.num_layers)
+                         eos_id=lang_index_stoi['<eos>'], sos_id=lang_index_stoi['<sos>'], n_layers=FLAGS.num_layers)
 
     seq2seqModel = seq2seq(encoder, decoder)
     if torch.cuda.is_available():
@@ -250,10 +284,9 @@ def create_model():
 
     # Prepare loss
     weight = torch.ones(FLAGS.lang_vocab_size)
+    loss = Perplexity(weight, lang_index_stoi['<pad>'])
 
-    loss = Perplexity(weight, lang_stoi['<pad>'])
-
-    return seq2seqModel, loss, srcField, tgtField
+    return seq2seqModel, loss, srcField, tgtField, tgt_label_map
 
 
 def train():
@@ -264,7 +297,7 @@ def train():
         os.makedirs(model_dir)
 
     max_len = 50
-    seq2seqModel, loss, srcField, tgtField = create_model()
+    seq2seqModel, loss, srcField, tgtField, tgtLabel = create_model()
 
     dev_set = load_dataset(FLAGS.data_dir, 'dev',srcField, tgtField, max_len)
     full_train_set = load_dataset(FLAGS.data_dir,'train', srcField, tgtField, max_len)
@@ -274,7 +307,7 @@ def train():
         loss.cuda()
 
     print("Training model")
-    t = SupervisedTrainer(loss=loss, batch_size=32,
+    t = SupervisedTrainer(loss=loss, batch_size=int(FLAGS.batch_size),
                           checkpoint_every=50,
                           print_every=20, expt_dir=FLAGS.expt_dir)
     optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
@@ -558,7 +591,6 @@ def classify(text):
         predictor = Predictor(seq2seqModel, char_vocab, lang_vocab)
 
     seq = text.strip().split()
-
     predicted_labels = predictor.predict(seq)
 
     # Ensure we have predictions for each token
