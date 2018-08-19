@@ -120,6 +120,9 @@ _EOS = b"_EOS"
 _UNK = b"_UNK"
 _START_VOCAB = ['_PAD', '_GO', '_EOS', '_UNK']
 
+# need to have special ids for unk, sos and eos, etc.
+_SPECIALS = {'unk_token':'<unk>','sos_token':'<sos>','eos_token':'<eos>','pad_token':'<pad>'}
+
 PAD_ID = 0
 GO_ID = 1
 EOS_ID = 2
@@ -184,88 +187,23 @@ def get_vocab(vocab_file_path):
         stoi[str(sym)] = i
     return itos, stoi
 
-def create_model():
+def create_model(sourceVocabClass, targetVocabClass):
     """Create translation model and initialize or load parameters in session."""
     # Prepare src char vocabulary and target vocabulary dataset
-
     max_len = 50
-    char_vocab_path = FLAGS.data_dir + '/vocab_src.dict'
-    lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
-
-    class vocab_cls(object):
-        def __init__(self, itos, stoi):
-            self.itos = itos
-            self.stoi = stoi
-
-    char_itos, char_stoi = get_vocab(char_vocab_path)
-    lang_itos, lang_stoi = get_vocab(lang_vocab_path)
-
-    charSpecialsId = len(char_itos)
-    langSpecialsId = len(lang_itos)
-
-    # In target file for language we only see indices of the language
-    # However, the language dict here maps from string to index
-    # If we pass this dict as vocab to the torchtext.bucketiterator later,
-    # it  causes problems during training because bucketiterator
-    # will try to lookup the language code numbers read from the target file
-    # within the vocab, which won't be there.
-    # Hence creating a one-to-one mapping for the indices in lang
-    lang_index_stoi = defaultdict(lambda: langSpecialsId)
-    for k,v in lang_stoi.items():
-        lang_index_stoi[v] = v
-    lang_index_itos = list(lang_stoi.values())
-
-    # need to have special ids for unk, sos and eos, etc.
-    specials = {'unk_token':'<unk>','sos_token':'<sos>','eos_token':'<eos>','pad_token':'<pad>'}
-
-    for _, spl_symbol in specials.items():
-        char_itos.append(charSpecialsId)
-        char_stoi[spl_symbol] = charSpecialsId
-        lang_index_itos.append(langSpecialsId)
-        lang_index_stoi[spl_symbol] = langSpecialsId
-        langSpecialsId += 1
-        charSpecialsId += 1
-
-    # char_tabular = torchtext.datasets.SequenceTaggingDataset(char_vocab_path,
-    #                                              fields=[('text', torchtext.data.Field(use_vocab=False)),
-    #                                                      ('labels',None)])
-    # lang_tabular = torchtext.datasets.SequenceTaggingDataset(lang_vocab_path,
-    #                                              fields=[('text', torchtext.data.Field(use_vocab=False,
-    #                                                                                    init_token=tgtField.SYM_SOS,
-    #                                                                                    eos_token=tgtField.SYM_EOS))])
-    #
-    # print("char vocab len:{}".format(len(char_tabular)))
-    # print("lang vocab len:{}".format(len(lang_tabular)))
-    # # print("verifying char fields:{}".format(char_tabular.fields))
-    # print("verifying lang fields:{}".format(lang_tabular.fields))
-    # srcField.build_vocab(char_tabular.text, max_size=50000)
-    # tgtField.build_vocab(lang_tabular.text, max_size=50000)
-    # print("Source vocab len:{}".format(len(srcField.vocab.stoi)))
-    # print("Target vocab itos:{} and stoi:{}".format(tgtField.vocab.itos,tgtField.vocab.stoi))
-
-    # Create model.
-    # print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-    FLAGS.char_vocab_size = len(char_itos)
-    FLAGS.lang_vocab_size = len(lang_index_itos)
-    print("Char vocab size:{} Lang vocab size:{}".format(FLAGS.char_vocab_size, FLAGS.lang_vocab_size))
-
-    srcField = SourceField(use_vocab=True)
-    tgtField = TargetField(use_vocab=True)
-    tgt_label_map = vocab_cls(lang_itos, lang_stoi)
-    srcField.vocab = vocab_cls(char_itos, char_stoi)
-    tgtField.vocab = vocab_cls(lang_index_itos, lang_index_stoi)
-    srcField.set_specials(specials)
-    tgtField.set_specials(specials)
-
-    logger.debug("char itos:{}".format(srcField.vocab.itos))
-    logger.debug("char stoi:{}".format(srcField.vocab.stoi))
-
-    logger.debug("lang itos:{}".format(tgtField.vocab.itos))
-    logger.debug("lang stoi:{}".format(tgtField.vocab.stoi))
 
     # Initialize model
     hidden_size = FLAGS.size
     bidirectional = False
+    srcField = SourceField(use_vocab=True)
+    tgtField = TargetField(use_vocab=True)
+
+    srcField.vocab = sourceVocabClass
+    tgtField.vocab = targetVocabClass
+
+    srcField.set_specials(_SPECIALS)
+    tgtField.set_specials(_SPECIALS)
+
     encoder = EncoderRNN(FLAGS.char_vocab_size,
                          max_len,
                          hidden_size,
@@ -285,24 +223,27 @@ def create_model():
 
     # Prepare loss
     weight = torch.ones(FLAGS.lang_vocab_size)
-    loss = Perplexity(weight, lang_index_stoi['<pad>'])
+    loss = Perplexity(weight, tgtField.vocab.stoi[tgtField.pad_token])
 
-    return seq2seqModel, loss, srcField, tgtField, tgt_label_map
+    return seq2seqModel, loss, srcField, tgtField
 
-
-def train():
+def train(sourceVocabClass, targetVocabClass):
     """Train the Equilid Model from character to language-tagged-token sampleData."""
-
     # Ensure we have a directory to write to
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
     max_len = 50
-    seq2seqModel, loss, srcField, tgtField, tgtLabel = create_model()
+    seq2seqModel, loss, srcField, tgtField = create_model(sourceVocabClass, targetVocabClass)
 
     dev_set = load_dataset(FLAGS.data_dir, 'dev',srcField, tgtField, max_len)
     full_train_set = load_dataset(FLAGS.data_dir,'train', srcField, tgtField, max_len)
     assert len(dev_set) == len(full_train_set)
+
+    logger.debug("char itos:{}".format(srcField.vocab.itos))
+    logger.debug("char stoi:{}".format(srcField.vocab.stoi))
+    logger.debug("lang itos:{}".format(tgtField.vocab.itos))
+    logger.debug("lang stoi:{}".format(tgtField.vocab.stoi))
 
     if torch.cuda.is_available():
         loss.cuda()
@@ -319,9 +260,7 @@ def train():
                       optimizer=optimizer,
                       teacher_forcing_ratio=0.5,
                       resume=FLAGS.resume)
-
     print("training completed!")
-
 
 def repair(tokens, predictions):
     """
@@ -545,12 +484,10 @@ def initialize_vocabulary(vocabulary_path):
     vocab = dict([(x, y) for (y, x) in enumerate(rev_vocab)])
     return vocab, rev_vocab
 
-
 def get_langs(text):
     token_langs = classify(text)
     langs = set([x for x in token_langs if len(x) == 3])
     return langs
-
 
 def load_model():
     checkpoint_path = ""
@@ -573,10 +510,14 @@ classifier = None
 # The predictor class constructed on the classifier, input and output vocab.
 predictor = None
 
-def classify(text):
+def classify(seq, langItos):
     """
-        text is by default treated as unicode in Python 3
+
+    :param text: text to classify is by default treated as unicode in Python 3
+    :param langVocab: dict of 'langId'->'langCode'
+    :return: a sequence of language codes
     """
+
     global classifier
     global predictor
 
@@ -591,12 +532,15 @@ def classify(text):
     if predictor is None:
         predictor = Predictor(seq2seqModel, char_vocab, lang_vocab)
 
-    seq = text.strip().split()
     predicted_labels = predictor.predict(seq)
 
     # Ensure we have predictions for each token
-    predictions = repair(text.split(), predicted_labels)
-    # print(predictions)
+    # predictions = repair(text.split(), predicted_labels)
+    predictions = []
+    print("predictions:".format(predicted_labels))
+    for pred in predictions:
+        predictions.append(langItos[int(pred)])
+
     return predictions
 
 # def predict():
@@ -644,7 +588,91 @@ def set_param(name, val):
     """
     setattr(FLAGS, name, val)
 
+def textToIds(text, charToId):
+    """
+    Segments words within a text to individual characters and
+    replaces them with an Index in their vocabulary.
+    :param text: text to convert
+    :param charToId: dict containing key, value pairs like: 'c'->'5'
+    :return: sequence of numbers representing each character in the text
+    """
+    charList = list("".join(text.strip().split()))
+    charToIds = []
+    for ch in charList:
+        charToIds.append(int(charToId[ch]))
+    return charToIds
+
 if __name__== "__main__":
+    char_vocab_path = FLAGS.data_dir + '/vocab_src.dict'
+    lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
+    src_dict_path = FLAGS.data_dir + '/src_vocab.dict'
+
+    char_itos, char_stoi = get_vocab(char_vocab_path)
+    lang_itos, lang_stoi = get_vocab(lang_vocab_path)
+    _ , src_dict = get_vocab(src_dict_path)
+
+    print("Char Vocab itos:{} \n stoi:{}".format(char_itos, char_stoi))
+    print("Lang Vocab itos:{} \n stoi:{}".format(lang_itos, lang_stoi))
+
+    class vocab_cls(object):
+        def __init__(self, itos, stoi):
+            self.itos = itos
+            self.stoi = stoi
+
+    # In target file for language we only see indices of the language
+    # However, the language dict here maps from string to index
+    # If we pass this dict as vocab to the torchtext.bucketiterator later,
+    # it  causes problems during training because bucketiterator
+    # will try to lookup the language code numbers read from the target file
+    # within the vocab, which won't be there.
+    # Hence creating a one-to-one mapping for the indices in lang
+    lang_index_stoi = {}
+    for k, v in lang_stoi.items():
+        lang_index_stoi[str(v)] = v
+    lang_index_itos = list(lang_stoi.values())
+
+    charSpecialsId = len(char_itos)
+    langSpecialsId = len(lang_itos)
+
+    for _, spl_symbol in _SPECIALS.items():
+        char_itos.append(charSpecialsId)
+        char_stoi[spl_symbol] = charSpecialsId
+        lang_index_itos.append(langSpecialsId)
+        lang_index_stoi[spl_symbol] = langSpecialsId
+        langSpecialsId += 1
+        charSpecialsId += 1
+
+    # char_tabular = torchtext.datasets.SequenceTaggingDataset(char_vocab_path,
+    #                                              fields=[('text', torchtext.data.Field(use_vocab=False)),
+    #                                                      ('labels',None)])
+    # lang_tabular = torchtext.datasets.SequenceTaggingDataset(lang_vocab_path,
+    #                                              fields=[('text', torchtext.data.Field(use_vocab=False,
+    #                                                                                    init_token=tgtField.SYM_SOS,
+    #                                                                                    eos_token=tgtField.SYM_EOS))])
+    #
+    # print("char vocab len:{}".format(len(char_tabular)))
+    # print("lang vocab len:{}".format(len(lang_tabular)))
+    # # print("verifying char fields:{}".format(char_tabular.fields))
+    # print("verifying lang fields:{}".format(lang_tabular.fields))
+    # srcField.build_vocab(char_tabular.text, max_size=50000)
+    # tgtField.build_vocab(lang_tabular.text, max_size=50000)
+    # print("Source vocab len:{}".format(len(srcField.vocab.stoi)))
+    # print("Target vocab itos:{} and stoi:{}".format(tgtField.vocab.itos,tgtField.vocab.stoi))
+
+    # Create model.
+    # print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
+
+    tgtVocabClass = vocab_cls(lang_itos, lang_stoi)
+    srcVocabClass= vocab_cls(char_itos, char_stoi)
+    tgtIndexVocabClass = vocab_cls(lang_index_itos, lang_index_stoi)
+
+    FLAGS.char_vocab_size = len(char_itos)
+    FLAGS.lang_vocab_size = len(lang_index_itos)
+    print("Char vocab size:{} Lang vocab size:{}".format(FLAGS.char_vocab_size, FLAGS.lang_vocab_size))
+
     if FLAGS.train_mode:
-        train()
-    classify("how are you")
+        train(srcVocabClass, tgtIndexVocabClass)
+
+    srcText= "how are you"
+    srcTextToIds = textToIds(srcText, src_dict)
+    print(classify(srcTextToIds, tgtVocabClass.itos))
