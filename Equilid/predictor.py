@@ -45,9 +45,11 @@ class Predictor(object):
 
         length = other['length'][0]
 
+        print("source seq:{}".format(src_seq))
         print("prediction length:{}".format(length))
         tgt_id_seq = [other['sequence'][di][0].data[0] for di in range(length)]
         print("target id sequence:{}".format(tgt_id_seq))
+        # print("target vocab itos:{}".format(self.tgt_vocab.itos))
         tgt_seq = [self.tgt_vocab.itos[tok] for tok in tgt_id_seq]
         return tgt_seq
 

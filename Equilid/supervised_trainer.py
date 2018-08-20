@@ -48,7 +48,7 @@ class SupervisedTrainer(object):
 
         self.logger = logging.getLogger(__name__)
         self.logger.addHandler(logging.StreamHandler())
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
 
     def _train_batch(self, input_variable, input_lengths, target_variable, model, teacher_forcing_ratio):
         loss = self.loss

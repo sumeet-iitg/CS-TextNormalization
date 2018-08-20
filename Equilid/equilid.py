@@ -178,7 +178,7 @@ def get_vocab(vocab_file_path):
 
     with open(vocab_file_path) as char_fp:
         for line in char_fp:
-            itos.append(line.split("\t")[0].strip())
+            itos.append(line.split("\t")[0])
 
     # setting the default-dict value in stoi for some unknown character
     # stoi = defaultdict(lambda: len(itos))
@@ -529,6 +529,12 @@ def classify(seq, langItos):
     # Unpack the classifier into the things we need
     seq2seqModel, char_vocab, lang_vocab = classifier
 
+    print("Classifier Char Vocab itos:{} \n stoi:{}".format(char_vocab.itos, char_vocab.stoi))
+    print("Classifier Lang Vocab itos:{} \n stoi:{}".format(lang_vocab.itos, lang_vocab.stoi))
+
+    # print("Lousy index check:{}".format(char_vocab.stoi['33']))
+    # print(" another check:{}".format(char_vocab.stoi[33]))
+
     if predictor is None:
         predictor = Predictor(seq2seqModel, char_vocab, lang_vocab)
 
@@ -537,8 +543,8 @@ def classify(seq, langItos):
     # Ensure we have predictions for each token
     # predictions = repair(text.split(), predicted_labels)
     predictions = []
-    print("predictions:".format(predicted_labels))
-    for pred in predictions:
+    print("predictions:{}".format(predicted_labels))
+    for pred in predicted_labels:
         predictions.append(langItos[int(pred)])
 
     return predictions
@@ -596,10 +602,12 @@ def textToIds(text, charToId):
     :param charToId: dict containing key, value pairs like: 'c'->'5'
     :return: sequence of numbers representing each character in the text
     """
-    charList = list("".join(text.strip().split()))
+
+    charList = list(text)
     charToIds = []
     for ch in charList:
-        charToIds.append(int(charToId[ch]))
+        # converting to str because initially they weren't read as ints from file while training
+        charToIds.append(str(charToId[ch]))
     return charToIds
 
 if __name__== "__main__":
@@ -611,8 +619,7 @@ if __name__== "__main__":
     lang_itos, lang_stoi = get_vocab(lang_vocab_path)
     _ , src_dict = get_vocab(src_dict_path)
 
-    print("Char Vocab itos:{} \n stoi:{}".format(char_itos, char_stoi))
-    print("Lang Vocab itos:{} \n stoi:{}".format(lang_itos, lang_stoi))
+    print("Lang Vocab dict:{}".format(src_dict))
 
     class vocab_cls(object):
         def __init__(self, itos, stoi):
