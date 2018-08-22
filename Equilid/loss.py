@@ -138,12 +138,17 @@ class Perplexity(NLLLoss):
         self.acc_loss += self.criterion(outputs, target)
         if self.mask is None:
             self.norm_term += np.prod(target.size())
+            print("target size:{} ,np prod:{}".format(target.size(),np.prod(target.size())))
         else:
             self.norm_term += target.data.ne(self.mask).sum()
+            print("mask term:{} ,target ne mask term:{}".format(self.mask, target.data.ne(self.mask).sum()))
+        print("Norm Term = {}".format(self.norm_term))
 
     def get_loss(self):
+        print("Loss object {}".format(self))
+        print("Get loss Norm Term First Line = {}".format(self.norm_term))
         nll = super(Perplexity, self).get_loss()
-        self.norm_term = self.norm_term
+        print("Get loss Norm Term = {}".format(self.norm_term))
         nll /= self.norm_term
         if (nll > Perplexity._MAX_EXP).cpu().numpy():
             print("WARNING: Loss exceeded maximum value, capping to e^100")

@@ -48,7 +48,7 @@ class SupervisedTrainer(object):
 
         self.logger = logging.getLogger(__name__)
         self.logger.addHandler(logging.StreamHandler())
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
 
     def _train_batch(self, input_variable, input_lengths, target_variable, model, teacher_forcing_ratio):
         loss = self.loss
@@ -83,7 +83,7 @@ class SupervisedTrainer(object):
         log.debug("Data Desc: Examples Len:{}, Fields Len:{}".format(len(data.examples),len(data.fields.items())))
 
         batch_iterator = torchtext.data.BucketIterator(dataset=data, batch_size=self.batch_size,
-            sort=False, sort_within_batch=True,
+            sort=False, sort_within_batch=False,
             sort_key=lambda x: len(x.src),
             device=device, repeat=False)
 
