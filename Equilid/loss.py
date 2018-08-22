@@ -143,7 +143,7 @@ class Perplexity(NLLLoss):
 
     def get_loss(self):
         nll = super(Perplexity, self).get_loss()
-        self.norm_term = self.norm_term.float()
+        self.norm_term = self.norm_term
         nll /= self.norm_term
         if (nll > Perplexity._MAX_EXP).cpu().numpy():
             print("WARNING: Loss exceeded maximum value, capping to e^100")
