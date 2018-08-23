@@ -83,7 +83,7 @@ class SupervisedTrainer(object):
         log.debug("Data Desc: Examples Len:{}, Fields Len:{}".format(len(data.examples),len(data.fields.items())))
 
         batch_iterator = torchtext.data.BucketIterator(dataset=data, batch_size=self.batch_size,
-            sort=False, sort_within_batch=False,
+            sort=False, sort_within_batch=True,
             sort_key=lambda x: len(x.src),
             device=device, repeat=False)
 

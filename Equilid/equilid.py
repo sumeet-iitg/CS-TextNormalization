@@ -259,7 +259,7 @@ def train(sourceVocabClass, targetVocabClass):
         seq2seqModel = t.train(seq2seqModel, full_train_set[i],
                       num_epochs=6, dev_data=dev_set[i],
                       optimizer=optimizer,
-                      teacher_forcing_ratio=0.5,
+                      teacher_forcing_ratio=1,
                       resume=FLAGS.resume)
     print("training completed!")
 
