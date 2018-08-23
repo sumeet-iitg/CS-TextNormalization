@@ -67,7 +67,7 @@ from DecoderRNN import DecoderRNN
 
 from Seq2seq import seq2seq
 from supervised_trainer import SupervisedTrainer
-from loss import Perplexity
+from loss import NLLLoss, Perplexity
 
 from fields import SourceField, TargetField
 from optim import Optimizer
@@ -223,7 +223,8 @@ def create_model(sourceVocabClass, targetVocabClass):
 
     # Prepare loss
     weight = torch.ones(FLAGS.lang_vocab_size)
-    loss = Perplexity(weight, tgtField.vocab.stoi[tgtField.pad_token])
+    loss = NLLLoss(weight, tgtField.vocab.stoi[tgtField.pad_token])
+    # loss = Perplexity(weight, tgtField.vocab.stoi[tgtField.pad_token])
 
     return seq2seqModel, loss, srcField, tgtField
 
