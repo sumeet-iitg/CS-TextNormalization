@@ -60,8 +60,7 @@ class Evaluator(object):
                 match += correct
                 total += non_padding.sum()
 
-        # if (total == 0).data.cpu().numpy():
-        if total == 0:
+        if (total == 0).data.cpu().numpy():
             accuracy = float('nan')
         else:
             accuracy = match / total

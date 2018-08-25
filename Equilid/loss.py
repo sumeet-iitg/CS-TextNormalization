@@ -108,6 +108,7 @@ class NLLLoss(Loss):
             return 0
         # total loss for all batches
         loss = self.acc_loss.data
+
         if self.size_average:
             # average loss per batch
             loss /= self.norm_term
@@ -116,6 +117,7 @@ class NLLLoss(Loss):
     def eval_batch(self, outputs, target):
         self.acc_loss += self.criterion(outputs, target)
         self.norm_term += 1
+        print("Acc loss:{}, Norm_Term:{}".format(self.acc_loss, self.norm_term))
 
 class Perplexity(NLLLoss):
     """ Language model perplexity loss.

@@ -93,7 +93,7 @@ class DecoderRNN(BaseRNN):
     def forward_step(self, input_var, hidden, encoder_outputs, function):
         batch_size = input_var.size(0)
         output_size = input_var.size(1)
-        print("Decoder input dim:{}".format(input_var.size()))
+        # print("Decoder input dim:{}".format(input_var.size()))
         embedded = self.embedding(input_var)
         embedded = self.input_dropout(embedded)
 
@@ -104,7 +104,7 @@ class DecoderRNN(BaseRNN):
             output, attn = self.attention(output, encoder_outputs)
 
         predicted_softmax = function(self.out(output.contiguous().view(-1, self.hidden_size)), dim=1).view(batch_size, output_size, -1)
-        print("predicted_softmax dim:{}".format(predicted_softmax.size()))
+        # print("predicted_softmax dim:{}".format(predicted_softmax.size()))
         return predicted_softmax, hidden, attn
 
     def forward(self, inputs=None, encoder_hidden=None, encoder_outputs=None,
@@ -202,7 +202,7 @@ class DecoderRNN(BaseRNN):
                 elif self.rnn_cell is nn.GRU:
                     batch_size = encoder_hidden.size(1)
 
-        print("Encoder output dim:{}".format(encoder_outputs.size()))
+        # print("Encoder output dim:{}".format(encoder_outputs.size()))
 
         # set default input and max decoding length
         if inputs is None:

@@ -168,7 +168,7 @@ def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None
 
         # debug tip: write another function here to see if it is getting read properly
         loaded_files.append(tabularFile)
-        logger.debug("FileName:{} Example Len:{}".format(src_tgt_combined, len(tabularFile.examples)))
+        logger.debug("FileName:{} Example Len:{}".format(src_tgt_combined, len(list(tabularFile.examples))))
 
     logger.debug("Files loaded count:{}".format(len(loaded_files)))
     return loaded_files
@@ -190,7 +190,7 @@ def get_vocab(vocab_file_path):
 def create_model(sourceVocabClass, targetVocabClass):
     """Create translation model and initialize or load parameters in session."""
     # Prepare src char vocabulary and target vocabulary dataset
-    max_len = 50
+    max_len = 1000
 
     # Initialize model
     hidden_size = FLAGS.size
@@ -223,8 +223,8 @@ def create_model(sourceVocabClass, targetVocabClass):
 
     # Prepare loss
     weight = torch.ones(FLAGS.lang_vocab_size)
-    loss = NLLLoss(weight, tgtField.vocab.stoi[tgtField.pad_token])
-    # loss = Perplexity(weight, tgtField.vocab.stoi[tgtField.pad_token])
+    # loss = NLLLoss(weight, tgtField.vocab.stoi[tgtField.pad_token])
+    loss = Perplexity(weight, tgtField.vocab.stoi[tgtField.pad_token])
 
     return seq2seqModel, loss, srcField, tgtField
 
@@ -234,11 +234,12 @@ def train(sourceVocabClass, targetVocabClass):
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
-    max_len = 50
+    max_len = 1000
     seq2seqModel, loss, srcField, tgtField = create_model(sourceVocabClass, targetVocabClass)
 
-    dev_set = load_dataset(FLAGS.data_dir, 'dev',srcField, tgtField, max_len)
     full_train_set = load_dataset(FLAGS.data_dir,'train', srcField, tgtField, max_len)
+    dev_set = load_dataset(FLAGS.data_dir, 'dev', srcField, tgtField, max_len)
+
     assert len(dev_set) == len(full_train_set)
 
     logger.debug("char itos:{}".format(srcField.vocab.itos))
