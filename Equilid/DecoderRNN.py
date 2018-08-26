@@ -154,7 +154,7 @@ class DecoderRNN(BaseRNN):
 
         else:
             decoder_input = inputs[:, 0].unsqueeze(1)
-            print("max_length = {}".format(max_length))
+            print("No teacher forcing, max_length = {}".format(max_length))
             for di in range(max_length):
                 decoder_output, decoder_hidden, step_attn = self.forward_step(decoder_input, decoder_hidden, encoder_outputs,
                                                                          function=function)
