@@ -94,6 +94,8 @@ parser.add_argument('--train', dest='train_mode', action='store_true')
 parser.add_argument('--no-train', dest='train_mode', action='store_false')
 parser.set_defaults(train_mode=True)
 parser.add_argument('--learning_rate', action='store', dest='learning_rate', default=0.5, help='Learning rate.')
+parser.add_argument('--checkpoint_interval', action='store', dest='checkpoint_interval', default=500, help='Checkpoint interval')
+
 parser.add_argument('--learning_rate_decay_factor', action='store', dest='dr', default=0.99,
                           help='Learning rate decays by this much.')
 parser.add_argument('--max_gradient_norm', action='store', dest='max_gradient_norm', default=5.0, help='Clip gradients to this norm.')
@@ -104,7 +106,6 @@ parser.add_argument('--num_layers',action='store', dest='num_layers', default=3,
 parser.add_argument('--char_vocab_size',action='store', dest='char_vocab_size', default=40000, help='Character vocabulary size.')
 parser.add_argument('--lang_vocab_size',action='store', dest='lang_vocab_size', default=40000, help='Language vocabulary size.')
 parser.add_argument('--data_dir',action='store', dest='data_dir', default='/tmp', help='Data directory')
-
 # Have the model be loaded from a path relative to where we currently are
 cur_dir = os.path.dirname(os.path.abspath(__file__))
 model_dir = cur_dir + "/../models/70lang"
@@ -252,7 +253,7 @@ def train(sourceVocabClass, targetVocabClass):
 
     print("Training model")
     t = SupervisedTrainer(loss=loss, batch_size=int(FLAGS.batch_size),
-                          checkpoint_every=50,
+                          checkpoint_every=FLAGS.checkpoint_interval,
                           print_every=20, expt_dir=FLAGS.expt_dir)
     optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
 
