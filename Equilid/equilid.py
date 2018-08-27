@@ -179,7 +179,7 @@ def get_vocab(vocab_file_path):
 
     with open(vocab_file_path) as char_fp:
         for line in char_fp:
-            itos.append(line.split("\t")[0])
+            itos.append(line.split("\t")[0].strip())
 
     # setting the default-dict value in stoi for some unknown character
     # stoi = defaultdict(lambda: len(itos))
