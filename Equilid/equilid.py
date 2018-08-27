@@ -614,7 +614,7 @@ def textToIds(text, charToId):
     return charToIds
 
 if __name__== "__main__":
-    char_vocab_path = FLAGS.data_dir + '/vocab_src.dict'
+    char_vocab_path = FLAGS.data_dir + '/char_vocab.src'
     lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
     src_dict_path = FLAGS.data_dir + '/src_vocab.dict'
 
