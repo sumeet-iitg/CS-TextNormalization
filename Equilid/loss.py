@@ -154,6 +154,6 @@ class Perplexity(NLLLoss):
         # print("Get loss Norm Term = {}".format(self.norm_term))
         nll /= self.norm_term
         if (nll > Perplexity._MAX_EXP).cpu().numpy():
-            print("WARNING: Loss exceeded maximum value, capping to e^100")
+            print("WARNING: Loss value %.4f exceeded maximum value, capping to e^100" % nll)
             return math.exp(Perplexity._MAX_EXP)
         return math.exp(nll)
