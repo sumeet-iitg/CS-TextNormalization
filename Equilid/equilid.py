@@ -130,53 +130,66 @@ EOS_ID = 2
 UNK_ID = 3
 
 # We use a number of buckets and pad to the closest one for efficiency.
-_buckets = [ (60, 11), (100, 26), (140, 36)]
+_buckets = [(60, 11), (100, 26), (140, 36)]
 
 FLAGS = parser.parse_args()
 
-def load_dataset(data_dir, data_type, srcField, tgtField, max_len, select = None):
-    """Loads the dataset from all sources in torchtext tabulardataset fmt"""
-
+def get_file_paths(data_dir, data_type_exts, select = None):
     # Get all the files of IDs
     # glob finds all the files with a given pattern
-    files = [f for f in glob(data_dir + '/*' + data_type + '.ids')]
 
-    # The match the source and target files
-    prefices = set()
-    for f in files:
-        prefices.add(basename(f).split(".")[0])
-    loaded_files = []
+    combined_files = []
+    data_types = data_type_exts.split(':')
 
-    for p in prefices:
-        if (select is not None) and (not select in p):
+    file_names = []
+    for data_type in data_types:
+        file_names += [f for f in glob(data_dir + '/*' + data_type + '.ids')]
+
+    file_prefices = set()
+    for f in file_names:
+        file_prefices.add(basename(f).split(".")[0])
+
+    for fp in file_prefices:
+        if (select is not None) and (not select in fp):
             continue
-        src = data_dir + '/' + p + '.source.' + data_type + '.ids'
-        tgt = data_dir + '/' + p + '.target.' + data_type + '.ids'
-        src_tgt_combined = data_dir + '/' + p + '.source_target.' + data_type + '.ids'
-        #joining the source and target into a single file for easier time reading with torchtext
-        if not os.path.exists(src_tgt_combined):
-            with open(src, 'r') as src_fp, open(tgt, 'r') as tgt_fp, open(src_tgt_combined, 'w') as src_tgt_fp:
-                src_line = src_fp.readline().strip()
-                tgt_line = tgt_fp.readline().strip()
-                while src_line and tgt_line:
-                    src_tgt_fp.write(src_line + '\t' + tgt_line + '\n')
+        # keep files with same prefix but different data_types
+        same_prefixed_files = []
+        for data_type in data_types:
+            src = data_dir + '/' + fp + '.source.' + data_type + '.ids'
+            tgt = data_dir + '/' + fp + '.target.' + data_type + '.ids'
+            src_tgt_combined = data_dir + '/' + fp + '.source_target.' + data_type + '.ids'
+            # Merge the Source and Target files into a single file having matching prefices
+
+            if not os.path.exists(src_tgt_combined):
+                logger.debug("Creating a combined file {}".format(src_tgt_combined))
+                with open(src, 'r') as src_fp, open(tgt, 'r') as tgt_fp, open(src_tgt_combined, 'w') as src_tgt_fp:
                     src_line = src_fp.readline().strip()
                     tgt_line = tgt_fp.readline().strip()
+                    while src_line and tgt_line:
+                        src_tgt_fp.write(src_line + '\t' + tgt_line + '\n')
+                        src_line = src_fp.readline().strip()
+                        tgt_line = tgt_fp.readline().strip()
+            same_prefixed_files.append(src_tgt_combined)
+        if len(same_prefixed_files) == 2:
+            combined_files.append((same_prefixed_files[0],same_prefixed_files[1]))
+        else:
+            combined_files.append(same_prefixed_files[0])
+    return combined_files
 
-        tabularFile = torchtext.data.TabularDataset(path=src_tgt_combined, format='tsv',
-                        fields=[('src', srcField),('tgt', tgtField)],
-                        filter_pred=lambda x: len(x.src) < max_len)
+def load_tabular_dataset(filePath, srcField, tgtField, max_len):
+    """Loads the dataset from all sources in torchtext tabulardataset fmt"""
 
-        # debug tip: write another function here to see if it is getting read properly
-        loaded_files.append(tabularFile)
-        logger.debug("FileName:{} Example Len:{}".format(src_tgt_combined, len(list(tabularFile.examples))))
+    tabularFile = torchtext.data.TabularDataset(path=filePath, format='tsv',
+                    fields=[('src', srcField),('tgt', tgtField)],
+                    filter_pred=lambda x: len(x.src) < max_len)
 
-    logger.debug("Files loaded count:{}".format(len(loaded_files)))
-    return loaded_files
+    # debug tip: write another function here to see if it is getting read properly
+    logger.debug("FileName:{} Example Len:{}".format(filePath, len(list(tabularFile.examples))))
+
+    return tabularFile
 
 def get_vocab(vocab_file_path):
     itos = []
-
     with open(vocab_file_path) as char_fp:
         for line in char_fp:
             sym = line.split("\t")[0].strip()
@@ -242,15 +255,13 @@ def train(sourceVocabClass, targetVocabClass):
     max_len = 1000
     seq2seqModel, loss, srcField, tgtField = create_model(sourceVocabClass, targetVocabClass)
 
-    full_train_set = load_dataset(FLAGS.data_dir,'train', srcField, tgtField, max_len)
-    dev_set = load_dataset(FLAGS.data_dir, 'dev', srcField, tgtField, max_len)
+    logger.debug("char itos length:{} desc:{}".format(len(srcField.vocab.itos), srcField.vocab.itos))
+    logger.debug("char stoi length:{} desc:{}".format(len(srcField.vocab.stoi), srcField.vocab.stoi))
+    logger.debug("lang itos length:{} desc:{}".format(len(tgtField.vocab.itos), tgtField.vocab.itos))
+    logger.debug("lang stoi length:{} desc:{}".format(len(tgtField.vocab.stoi), tgtField.vocab.stoi))
 
-    assert len(dev_set) == len(full_train_set)
-
-    logger.debug("char itos:{}".format(srcField.vocab.itos))
-    logger.debug("char stoi:{}".format(srcField.vocab.stoi))
-    logger.debug("lang itos:{}".format(tgtField.vocab.itos))
-    logger.debug("lang stoi:{}".format(tgtField.vocab.stoi))
+    # get a generator for files in the data directory
+    train_dev_pairs = get_file_paths(FLAGS.data_dir, 'train:dev')
 
     if torch.cuda.is_available():
         loss.cuda()
@@ -261,9 +272,12 @@ def train(sourceVocabClass, targetVocabClass):
                           print_every=20, expt_dir=FLAGS.expt_dir)
     optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
 
-    for i in range(len(full_train_set)):
-        seq2seqModel = t.train(seq2seqModel, full_train_set[i],
-                      num_epochs=6, dev_data=dev_set[i],
+    for train_path, dev_path in train_dev_pairs:
+        train_dataset = load_tabular_dataset(train_path, srcField, tgtField, max_len)
+        dev_dataset = load_tabular_dataset(dev_path, srcField, tgtField, max_len)
+        logger.debug("Using Dataset files train:{} dev:{}".format(train_path ,dev_path))
+        seq2seqModel = t.train(seq2seqModel, train_dataset,
+                      num_epochs=6, dev_data=dev_dataset,
                       optimizer=optimizer,
                       teacher_forcing_ratio=1,
                       resume=FLAGS.resume)
@@ -536,8 +550,8 @@ def classify(seq, langItos):
     # Unpack the classifier into the things we need
     seq2seqModel, char_vocab, lang_vocab = classifier
 
-    print("Classifier Char Vocab itos:{} \n stoi:{}".format(char_vocab.itos, char_vocab.stoi))
-    print("Classifier Lang Vocab itos:{} \n stoi:{}".format(lang_vocab.itos, lang_vocab.stoi))
+    print("Classifier Char Vocab itos:{} \n stoi:{}, with lengths:{}".format(char_vocab.itos, char_vocab.stoi, (len(char_vocab.itos), len(char_vocab.stoi))))
+    print("Classifier Lang Vocab itos:{} \n stoi:{}, with lengths:{}".format(lang_vocab.itos, lang_vocab.stoi, (len(lang_vocab.itos), len(lang_vocab.stoi))))
 
     # print("Lousy index check:{}".format(char_vocab.stoi['33']))
     # print(" another check:{}".format(char_vocab.stoi[33]))
@@ -555,43 +569,6 @@ def classify(seq, langItos):
         predictions.append(langItos[int(pred)])
 
     return predictions
-
-# def predict():
-#     # NB: is there a safer way to do this with a using statement if the file
-#     # is optionally written to but without having to buffer the output?
-#     output_file = FLAGS.predict_output_file
-#     if output_file is not None:
-#         outf = open(output_file, 'w')
-#     else:
-#         outf = None
-#
-#     if FLAGS.predict_file:
-#         print('Reading sampleData to predict from' + FLAGS.predict_file)
-#         predict_input = tf.gfile.GFile(FLAGS.predict_file, mode="r")
-#     else:
-#         print("No input file specified; reading from STDIN")
-#         predict_input = sys.stdin
-#
-#     for i, source in enumerate(predict_input):
-#         # Strip off newline
-#         source = source[:-1]
-#
-#         predictions = classify(source)
-#
-#         if outf is not None:
-#             outf.write(('%d\t%s\t%s\t%s\n' % (i, label, source_text, predicted)) \
-#                        .encode('utf-8'))
-#             # Since the model can take a while to predict, flush often
-#             # so the end-user can actually see progress when writing to a file
-#             if i % 10 == 0:
-#                 outf.flush()
-#         else:
-#             print(('Instance %d\t%s\t%s' % \
-#                    (i, source.encode('utf-8'), ' '.join(predictions))).encode('utf-8'))
-#
-#     if outf is not None:
-#         outf.close()
-
 
 def set_param(name, val):
     """
@@ -617,6 +594,7 @@ def textToIds(text, charToId):
         charToIds.append(str(charToId[ch]))
     return charToIds
 
+
 if __name__== "__main__":
     char_vocab_path = FLAGS.data_dir + '/char_vocab.src'
     lang_vocab_path = FLAGS.data_dir + '/vocab.tgt'
@@ -633,7 +611,7 @@ if __name__== "__main__":
             self.itos = itos
             self.stoi = stoi
 
-    # In target file for language we only see indices of the language
+    # In target file for language, we only see indices of the language
     # However, the language dict here maps from string to index
     # If we pass this dict as vocab to the torchtext.bucketiterator later,
     # it  causes problems during training because bucketiterator
@@ -656,28 +634,9 @@ if __name__== "__main__":
         langSpecialsId += 1
         charSpecialsId += 1
 
-    # char_tabular = torchtext.datasets.SequenceTaggingDataset(char_vocab_path,
-    #                                              fields=[('text', torchtext.data.Field(use_vocab=False)),
-    #                                                      ('labels',None)])
-    # lang_tabular = torchtext.datasets.SequenceTaggingDataset(lang_vocab_path,
-    #                                              fields=[('text', torchtext.data.Field(use_vocab=False,
-    #                                                                                    init_token=tgtField.SYM_SOS,
-    #                                                                                    eos_token=tgtField.SYM_EOS))])
-    #
-    # print("char vocab len:{}".format(len(char_tabular)))
-    # print("lang vocab len:{}".format(len(lang_tabular)))
-    # # print("verifying char fields:{}".format(char_tabular.fields))
-    # print("verifying lang fields:{}".format(lang_tabular.fields))
-    # srcField.build_vocab(char_tabular.text, max_size=50000)
-    # tgtField.build_vocab(lang_tabular.text, max_size=50000)
-    # print("Source vocab len:{}".format(len(srcField.vocab.stoi)))
-    # print("Target vocab itos:{} and stoi:{}".format(tgtField.vocab.itos,tgtField.vocab.stoi))
-
-    # Create model.
-    # print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-
     tgtVocabClass = vocab_cls(lang_itos, lang_stoi)
     srcVocabClass= vocab_cls(char_itos, char_stoi)
+    # our model trains on and predicts the language index which is
     tgtIndexVocabClass = vocab_cls(lang_index_itos, lang_index_stoi)
 
     FLAGS.char_vocab_size = len(char_itos)
