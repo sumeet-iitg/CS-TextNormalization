@@ -17,7 +17,7 @@ class SourceField(torchtext.data.Field):
 
         super(SourceField, self).__init__(**kwargs)
 
-    def process(self, batch, device=None):
+    def process(self, batch, device=None, **kwargs):
         """ Process a list of examples to create a torch.Tensor.
         Pad, numericalize, and postprocess a batch and create a tensor.
         Args:
@@ -26,7 +26,7 @@ class SourceField(torchtext.data.Field):
             torch.autograd.Variable: Processed object given the input
                 and custom postprocessing Pipeline.
         """
-        super(SourceField, self).process(batch,device)
+        super(SourceField, self).process(batch,device,**kwargs)
 
     def set_specials(self, specials):
         '''
@@ -64,7 +64,7 @@ class TargetField(torchtext.data.Field):
         self.eos_id = None
         super(TargetField, self).__init__(**kwargs)
 
-    def process(self, batch, device=None):
+    def process(self, batch, device=None, **kwargs):
         """ Process a list of examples to create a torch.Tensor.
         Pad, numericalize, and postprocess a batch and create a tensor.
         Args:
@@ -73,7 +73,7 @@ class TargetField(torchtext.data.Field):
             torch.autograd.Variable: Processed object given the input
                 and custom postprocessing Pipeline.
         """
-        super(TargetField, self).process(batch,device)
+        super(TargetField, self).process(batch,device, **kwargs)
 
     def set_specials(self, specials):
         '''
