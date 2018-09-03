@@ -26,7 +26,7 @@ class SourceField(torchtext.data.Field):
             torch.autograd.Variable: Processed object given the input
                 and custom postprocessing Pipeline.
         """
-        super(SourceField, self).process(batch,device,**kwargs)
+        return super(SourceField, self).process(batch,device,**kwargs)
 
     def set_specials(self, specials):
         '''
@@ -73,7 +73,7 @@ class TargetField(torchtext.data.Field):
             torch.autograd.Variable: Processed object given the input
                 and custom postprocessing Pipeline.
         """
-        super(TargetField, self).process(batch,device, **kwargs)
+        return super(TargetField, self).process(batch,device, **kwargs)
 
     def set_specials(self, specials):
         '''
