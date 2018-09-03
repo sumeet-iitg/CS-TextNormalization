@@ -619,7 +619,7 @@ if __name__== "__main__":
     # Hence creating a one-to-one mapping for the indices in lang
     lang_index_stoi = {}
     for k, v in lang_stoi.items():
-        lang_index_stoi[int(v)] = int(v)
+        lang_index_stoi[v] = int(v)
     lang_index_itos = list(lang_stoi.values())
 
     charSpecialsId = len(char_itos)
