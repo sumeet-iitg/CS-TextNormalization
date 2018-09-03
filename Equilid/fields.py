@@ -17,6 +17,17 @@ class SourceField(torchtext.data.Field):
 
         super(SourceField, self).__init__(**kwargs)
 
+    def process(self, batch, device=None):
+        """ Process a list of examples to create a torch.Tensor.
+        Pad, numericalize, and postprocess a batch and create a tensor.
+        Args:
+            batch (list(object)): A list of object from a batch of examples.
+        Returns:
+            torch.autograd.Variable: Processed object given the input
+                and custom postprocessing Pipeline.
+        """
+        super(SourceField, self).process(batch,device)
+
     def set_specials(self, specials):
         '''
         use this when you don't want to build the whole vocab, but just wish to have special constants
@@ -52,6 +63,17 @@ class TargetField(torchtext.data.Field):
         self.sos_id = None
         self.eos_id = None
         super(TargetField, self).__init__(**kwargs)
+
+    def process(self, batch, device=None):
+        """ Process a list of examples to create a torch.Tensor.
+        Pad, numericalize, and postprocess a batch and create a tensor.
+        Args:
+            batch (list(object)): A list of object from a batch of examples.
+        Returns:
+            torch.autograd.Variable: Processed object given the input
+                and custom postprocessing Pipeline.
+        """
+        super(TargetField, self).process(batch,device)
 
     def set_specials(self, specials):
         '''
