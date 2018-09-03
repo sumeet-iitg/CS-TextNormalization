@@ -103,42 +103,39 @@ class SupervisedTrainer(object):
                 next(batch_generator)
 
             model.train(True)
-            try:
-                for batch in batch_generator:
-                    step += 1
-                    step_elapsed += 1
-                    # log.debug("In step count:%d"%(step))
 
-                    input_variables, input_lengths = getattr(batch, 'src')
-                    target_variables = getattr(batch, 'tgt')
+            for batch in batch_generator:
+                step += 1
+                step_elapsed += 1
+                # log.debug("In step count:%d"%(step))
 
-                    loss = self._train_batch(input_variables, input_lengths.tolist(), target_variables, model, teacher_forcing_ratio)
+                input_variables, input_lengths = getattr(batch, 'src')
+                target_variables = getattr(batch, 'tgt')
 
-                    # Record average loss
-                    print_loss_total += loss
-                    epoch_loss_total += loss
+                loss = self._train_batch(input_variables, input_lengths.tolist(), target_variables, model, teacher_forcing_ratio)
 
-                    if step % self.print_every == 0 and step_elapsed > self.print_every:
-                        print_loss_avg = print_loss_total / self.print_every
-                        log_msg = 'Progress: %d%%, Train %s: Total %6.2f Avg %.4f' % (
-                            step / total_steps * 100,
-                            self.loss.name,
-                            print_loss_total,
-                            print_loss_avg)
-                        print_loss_total = 0
-                        log.info(log_msg)
+                # Record average loss
+                print_loss_total += loss
+                epoch_loss_total += loss
 
-                    # Checkpoint
-                    if step % self.checkpoint_every == 0 or step == total_steps:
-                        Checkpoint(model=model,
-                                   optimizer=self.optimizer,
-                                   epoch=epoch, step=step,
-                                   input_vocab=data.fields['src'].vocab,
-                                   output_vocab=data.fields['tgt'].vocab).save(self.expt_dir)
-            except KeyError as e:
-                srcVocabStoi = data.fields['src'].vocab.stoi
-                log.debug("Exiting because of KeyError exception: Source vocab len:{} stoi:{}".format(len(srcVocabStoi),srcVocabStoi))
-                exit(2)
+                if step % self.print_every == 0 and step_elapsed > self.print_every:
+                    print_loss_avg = print_loss_total / self.print_every
+                    log_msg = 'Progress: %d%%, Train %s: Total %6.2f Avg %.4f' % (
+                        step / total_steps * 100,
+                        self.loss.name,
+                        print_loss_total,
+                        print_loss_avg)
+                    print_loss_total = 0
+                    log.info(log_msg)
+
+                # Checkpoint
+                if step % self.checkpoint_every == 0 or step == total_steps:
+                    Checkpoint(model=model,
+                               optimizer=self.optimizer,
+                               epoch=epoch, step=step,
+                               input_vocab=data.fields['src'].vocab,
+                               output_vocab=data.fields['tgt'].vocab).save(self.expt_dir)
+
 
             if step_elapsed == 0: continue
 
