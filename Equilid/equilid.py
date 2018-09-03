@@ -202,7 +202,7 @@ def get_vocab(vocab_file_path):
     # stoi = defaultdict(lambda: len(itos))
     stoi = {}
     for i, sym in enumerate(itos):
-        stoi[str(sym)] = i
+        stoi[int(sym)] = i
     return itos, stoi
 
 def create_model(sourceVocabClass, targetVocabClass):
@@ -590,8 +590,7 @@ def textToIds(text, charToId):
     charList = list(text)
     charToIds = []
     for ch in charList:
-        # converting to str because initially they weren't read as ints from file while training
-        charToIds.append(str(charToId[ch]))
+        charToIds.append(int(charToId[ch]))
     return charToIds
 
 
@@ -620,7 +619,7 @@ if __name__== "__main__":
     # Hence creating a one-to-one mapping for the indices in lang
     lang_index_stoi = {}
     for k, v in lang_stoi.items():
-        lang_index_stoi[str(v)] = v
+        lang_index_stoi[int(v)] = v
     lang_index_itos = list(lang_stoi.values())
 
     charSpecialsId = len(char_itos)
