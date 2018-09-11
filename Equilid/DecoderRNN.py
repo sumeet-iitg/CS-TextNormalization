@@ -132,7 +132,7 @@ class DecoderRNN(BaseRNN):
 
             eos_batches = symbols.data.eq(self.eos_id)
             if eos_batches.dim() > 0:
-                eos_batches = eos_batches.cpu().view(-1).numpy()
+                eos_batches = eos_batches.view(-1).cpu().numpy()
                 update_idx = ((lengths > step) & eos_batches) != 0
                 lengths[update_idx] = len(sequence_symbols)
             return symbols

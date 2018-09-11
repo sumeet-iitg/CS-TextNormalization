@@ -590,7 +590,7 @@ def textToIds(text, charToId):
     charList = list(text)
     charToIds = []
     for ch in charList:
-        charToIds.append(int(charToId[ch]))
+        charToIds.append(str(charToId[ch]))
     return charToIds
 
 
