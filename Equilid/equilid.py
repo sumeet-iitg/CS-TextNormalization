@@ -95,7 +95,7 @@ parser.add_argument('--no-train', dest='train_mode', action='store_false')
 parser.set_defaults(train_mode=True)
 parser.add_argument('--learning_rate', action='store', dest='learning_rate', default=0.5, help='Learning rate.')
 parser.add_argument('--checkpoint_interval', action='store', dest='checkpoint_interval', default=500, help='Checkpoint interval')
-
+parser.add_argument('--num_epochs', action='store', dest='num_epochs', default=5,help= 'Number of epochs to train for!')
 parser.add_argument('--learning_rate_decay_factor', action='store', dest='dr', default=0.99,
                           help='Learning rate decays by this much.')
 parser.add_argument('--max_gradient_norm', action='store', dest='max_gradient_norm', default=5.0, help='Clip gradients to this norm.')
@@ -270,14 +270,15 @@ def train(sourceVocabClass, targetVocabClass):
     t = SupervisedTrainer(loss=loss, batch_size=int(FLAGS.batch_size),
                           checkpoint_every=FLAGS.checkpoint_interval,
                           print_every=20, expt_dir=FLAGS.expt_dir)
-    optimizer = Optimizer(torch.optim.Adam(seq2seqModel.parameters(), lr=FLAGS.learning_rate), max_grad_norm=FLAGS.max_gradient_norm)
+    adamOptimizer = torch.optim.Adam(seq2seqModel.parameters(), lr=float(FLAGS.learning_rate))
+    optimizer = Optimizer(adamOptimizer, max_grad_norm=FLAGS.max_gradient_norm)
 
     for train_path, dev_path in train_dev_pairs:
         train_dataset = load_tabular_dataset(train_path, srcField, tgtField, max_len)
         dev_dataset = load_tabular_dataset(dev_path, srcField, tgtField, max_len)
         logger.debug("Using Dataset files train:{} dev:{}".format(train_path ,dev_path))
         seq2seqModel = t.train(seq2seqModel, train_dataset,
-                      num_epochs=6, dev_data=dev_dataset,
+                      num_epochs=int(FLAGS.num_epochs), dev_data=dev_dataset,
                       optimizer=optimizer,
                       teacher_forcing_ratio=1,
                       resume=FLAGS.resume)
