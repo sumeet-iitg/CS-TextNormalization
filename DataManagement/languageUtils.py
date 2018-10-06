@@ -53,13 +53,10 @@ class languageIdentifier(object):
     def detectLanguageInWord(self, word):
         return NotImplementedError
 
-
 class indicLangIdentifier(languageIdentifier):
     def __init__(self,languageSet):
         super().__init__(languageSet)
 
-
-# TODO: Make this languages directly callable by their names so that we don't create objects beforehand
 def polyglot_SpellChecker(languageAnnotated_Text):
     correctedWords = []
     for wordLangPair in languageAnnotated_Text.split():
@@ -71,5 +68,10 @@ def polyglot_SpellChecker(languageAnnotated_Text):
             #     word = "<unk>"
         correctedWords.append(word + '\\' + lang)
     return " ".join(correctedWords)
+
+# ****for testing****
+# if __name__== "__main__":
+#     languageLoader("./language-config.json")
+#     print(__language_map__.keys(),__language_map__.values())
 
 
