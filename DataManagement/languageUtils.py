@@ -4,6 +4,8 @@ from DataManagement.constants import ANNOT_REGEX, LITCM_CODE_TO_UNIV_CODE
 import codecs
 import os
 import json
+from indic_transliteration import sanscript
+from indic_transliteration.sanscript import SchemeMap, SCHEMES, transliterate
 
 __language_map__ = {}
 
@@ -32,6 +34,7 @@ def load_lexicon(languageObject):
     setattr(languageObject, 'idx2Word', idx2Word)
     setattr(languageObject, 'stopWordIds', stopWordIds)
 
+
 def languageLoader(languageConfigFile):
     with open(languageConfigFile) as json_data:
         languages = json.load(json_data)
@@ -40,8 +43,23 @@ def languageLoader(languageConfigFile):
             langName, langProperties = next(iter(langJSON.keys())), dict(next(iter(langJSON.values())))
             # dynamically created language object
             langObject = type(langName, (object,), langProperties)
-            load_lexicon(langObject)
-            __language_map__[langObject.code] = langObject
+            __language_map__[langName] = langObject
+
+def indic_transliterator(text, src_lang, tgt_lang):
+    indic_transliterator_lang_codes = {"english":sanscript.ITRANS,
+                                       "hindi":sanscript.DEVANAGARI,
+                                       "telugu":sanscript.TELUGU,
+                                       "bengali":sanscript.BENGALI,
+                                       "gujarati":sanscript.GUJARATI,
+                                       "gurumukhi":sanscript.GURMUKHI,
+                                       "kannada":sanscript.KANNADA,
+                                       "malayalam":sanscript.MALAYALAM,
+                                       "tamil":sanscript.TAMIL
+                                       }
+    if not src_lang in indic_transliterator_lang_codes.keys() or \
+            not tgt_lang in indic_transliterator_lang_codes.keys():
+        raise KeyError("Unknown language code. Got source:'{}',target:'{}' ".format(src_lang,tgt_lang))
+    return transliterate(text, indic_transliterator_lang_codes[src_lang], indic_transliterator_lang_codes[tgt_lang])
 
 class languageIdentifier(object):
     def __init__(self, languageSet):
@@ -57,6 +75,9 @@ class indicLangIdentifier(languageIdentifier):
     def __init__(self,languageSet):
         super().__init__(languageSet)
 
+    def detectLanguageInWord(self, word):
+        return self.langSet[1]
+
 def polyglot_SpellChecker(languageAnnotated_Text):
     correctedWords = []
     for wordLangPair in languageAnnotated_Text.split():
@@ -64,8 +85,6 @@ def polyglot_SpellChecker(languageAnnotated_Text):
         # if this word is an annotation tag or isn't in the language map then don't spell check
         if not re.search(ANNOT_REGEX, word) and lang.lower() in __language_map__.keys():
             langObject = __language_map__[lang.lower()]
-            # if not langObject.basicSpellChecker(word):
-            #     word = "<unk>"
         correctedWords.append(word + '\\' + lang)
     return " ".join(correctedWords)
 
