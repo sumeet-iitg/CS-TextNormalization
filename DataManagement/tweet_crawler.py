@@ -110,7 +110,8 @@ def parse_twitter(tsvfile):
 
     return {'txt': txt_lst, 'lbl': lbl_lst}
 
-if __name__=='__main__':
+
+def filterConll():
     # crawl_tweets()
     # crawl_unique_tweets()
 
@@ -151,6 +152,19 @@ if __name__=='__main__':
                 word = line.strip()
                 filteredWord = extract_emojis(applyFiltersToWord(word,dumbFilters))
                 fFp.write(word + "\t" + filteredWord + '\n')
+
+if __name__=='__main__':
+    tweetFilter = tweetFilterCollection()
+    testFile = "C:\\lor\\LDC2018E57_LORELEI_IL10_Incident_Language_Pack_for_Year_3_Eval\\setE_IL10_monolingual.txt"
+    filteredTestFile = "C:\\lor\\LDC2018E57_LORELEI_IL10_Incident_Language_Pack_for_Year_3_Eval\\setE_IL10_monolingual_filtered.txt"
+    with codecs.open(testFile, encoding='utf-8') as ddFp, \
+            codecs.open(filteredTestFile, 'w', encoding='utf-8') as fFp:
+        for line in ddFp.readlines():
+            if line.isspace():
+                fFp.write(line)
+            else:
+                filteredLine = tweetFilter.ekphrasize(line)
+                fFp.write(filteredLine + '\n')
 
 '''
 # file with repeated string and NER within a tweet removed

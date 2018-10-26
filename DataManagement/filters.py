@@ -16,8 +16,11 @@ class filterCollection(object):
     def __init__(self):
         self.filters = []
 
-    def doFiltering(self,inpFile,outFileName):
+    def filterFile(self,inpFile,outFileName):
         return NotImplementedError
+
+    def filterLine(self,line):
+        return  NotImplementedError
 
 class dumbFilterCollection(filterCollection):
     def __init__(self):
@@ -47,16 +50,20 @@ class dumbFilterCollection(filterCollection):
         for word in text.split():
           clean_text.append("".join(char for char in word if not unicodedata.category(char).startswith('P')))
 
-
     def correctRepeatStr(self, text):
         text = re.sub(REPEAT_STR_3_OR_MORE, r"\1", text)
         return text
 
-    def doFiltering(self, inpPtr, outPtr):
+    def filterFile(self, inpPtr, outPtr):
         for line in inpPtr.readlines():
             for filter in self.filters:
                 line = filter(line)
             outPtr.write(line)
+
+    def filterLine(self, line):
+        for filter in self.filters:
+            line = filter(line)
+        return line
 
 
 class tweetFilterCollection(dumbFilterCollection):

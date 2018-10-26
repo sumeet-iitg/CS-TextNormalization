@@ -9,3 +9,4 @@ MENTION_REGEX = re.compile(r"(@[a-zA-Z_0-9]+)",re.UNICODE)
 ANNOT_REGEX = re.compile(r"<.*>",re.UNICODE)
 REPEAT_3_OR_MORE= re.compile(r"(.[^\s])\1{2,}",re.UNICODE)
 REPEAT_STR_3_OR_MORE= re.compile(r"(.*[^\s])\1{2,}",re.UNICODE)
+LANGUAGE_MAP = {'en':"English", 'hin':"Hindi", 'tlg':"Telugu"}
