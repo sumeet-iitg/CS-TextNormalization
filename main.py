@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Usage:
-    main.py
+    main.py --source-file=<file> --lang-set=<string>
+
 
 Options:
     -h --help                               show this screen.
+
     --source-file=<file>                    source file to cleanse
                                             [default:  'file.txt']
     --lang-set=<string>                     list of languages in the corpus
@@ -121,9 +123,12 @@ if __name__== "__main__":
     # main()
     # eng-spa tweetsFile = "C:\\Users\\SumeetSingh\\Documents\\Code-Mixed\\ACL-CM-NER-2018-eng-spa\\calcs_train_tweets.tsv"
     args = docopt(__doc__)
-    source_file = "../sourceFile.txt"
-    lang_file = ""
-    langList = ['english','hindi']
-    # normalize_hinglish_tweets(source_file, langList)
-    langList = ['english','telugu']
-    normalize_codemixed_text(source_file, langList)
+    source_file = args['--source-file']
+    lang_list=args['--lang-set'].strip().split(",")
+
+    # source_file = "../sourceFile.txt"
+    # lang_file = ""
+    # # langList = ['english','hindi']
+    # # normalize_hinglish_tweets(source_file, langList)
+    # langList = ['english','telugu']
+    normalize_codemixed_text(source_file, lang_list)
