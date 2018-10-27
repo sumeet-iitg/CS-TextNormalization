@@ -12,25 +12,10 @@ We build a pipeline to clean text noisy code-switched text online.
 
 Twitter
 
-## Environment
-
-The (pseudo-) template code is written in Python 3.6 using some supporting third-party libraries. We will provide a conda environment to install Python 3.6 with required libraries. Simply run
-
-```[bash]
-conda env create -f environment.yml
-```
-
 ## Usage
 
 You can use this pipeline end to end, or run the individual components within 
 
 ```[bash]
-python vocab.py --train-src=data/train.de-en.de.wmixerprep --train-tgt=data/train.de-en.en.wmixerprep data/vocab.bin
+python main.py --source-file="source_tanglish.txt" --lang-set="english,telugu"
 ```
-
-```
-python nmt.py decode --beam-size=5 --max-decoding-time-step=100 --embed-size=512 --vocab="data/vocab.bin" "work_dir/model_epoch_17_ppl_10.0793.t7" "data/test.de-en.de" "work_dir/decode.txt"
-```
-
-
-
