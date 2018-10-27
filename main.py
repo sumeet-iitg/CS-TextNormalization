@@ -22,8 +22,9 @@ from DataManagement import monolingualCorpus
 from DataManagement import tweetFilterCollection, dumbFilterCollection
 from cm_spellchecker import Spellchecker
 import codecs
-from docopt import docopt
+# from docopt import docopt
 import os
+import argparse
 
 
 def main():
@@ -82,7 +83,8 @@ def normalize_codemixed_text(source_file, lang_list):
     fileName, ext = inpFileName.split(".")
     outFile = fileName + "_filtered"
     outFile = os.path.join(head, outFile + "." + ext)
-    spellChecker = Spellchecker()
+    # TODO: MEHERESH, Invoke the Spellchecker constructor from here
+    # spellChecker = Spellchecker("spellcheck/data/bktree.pkl", 1, "firstOf", None)
 
     # if the lines within this file are already language annotated
     isLangTagged = True
@@ -100,7 +102,7 @@ def normalize_codemixed_text(source_file, lang_list):
                     if isLangTagged:
                         word,lang = token.split('\\')
                         words.append(word)
-                        lid_tags.append(token)
+                        lid_tags.append(lang)
                         lang_tagged_line +=token
                     else:
                         words.append(token)
@@ -108,7 +110,8 @@ def normalize_codemixed_text(source_file, lang_list):
                         lang_tagged_line += token + "\\" + lang
                         lid_tags.append(lang)
 
-                spell_corrected_line = spellChecker.correctSentence(lang_tagged_line)
+                spell_corrected_line = " ".join(words)
+                # TODO: MEHRESH replace with spell_corrected_line = spellChecker.correctSentence(lang_tagged_line)
                 # 3. Transliterate each word to their language specific script
                 translit_words = []
 
@@ -122,9 +125,14 @@ def normalize_codemixed_text(source_file, lang_list):
 if __name__== "__main__":
     # main()
     # eng-spa tweetsFile = "C:\\Users\\SumeetSingh\\Documents\\Code-Mixed\\ACL-CM-NER-2018-eng-spa\\calcs_train_tweets.tsv"
-    args = docopt(__doc__)
-    source_file = args['--source-file']
-    lang_list=args['--lang-set'].strip().split(",")
+    # args = docopt(__doc__)
+    parser = argparse.ArgumentParser(description='Code-mixed spellchecking')
+    parser.add_argument('source_file',type=str, help='file with code-mixed content, separated by newlines.')
+    parser.add_argument('lang_set', type=str, help='comma separated languages in the file')
+    args = parser.parse_args()
+
+    source_file = args.source_file
+    lang_list=args.lang_set.strip().split(",")
 
     # source_file = "../sourceFile.txt"
     # lang_file = ""
