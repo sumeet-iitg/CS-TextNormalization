@@ -7,11 +7,13 @@ We build a pipeline to clean text noisy code-switched text online.
     `languageUtils.py`: Classes for Langauge Specific Identifiers, Lexicons and SpellCheckers.  
     `dataloader.py`: Classes for loading a corpus - mono-lingual/multi-lingual.  
 
+## Requirements
 
-## Dataset
-
-Twitter
-
+- [pyenchant](https://github.com/rfk/pyenchant)
+- [fuzzy](https://pypi.org/project/Fuzzy/)
+- [pybktree](https://pypi.org/project/pybktree/)
+- [indictrans](https://pypi.org/project/indic-transliteration/)
+- [codecs](https://pypi.org/project/openapi-codec/)
 ## Usage
 
 You can use this pipeline end to end, or run the individual components within 
