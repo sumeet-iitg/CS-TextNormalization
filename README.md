@@ -9,11 +9,13 @@ We build a pipeline to clean text noisy code-switched text online.
 
 ## Requirements
 
-- [pyenchant](https://github.com/rfk/pyenchant)
 - [fuzzy](https://pypi.org/project/Fuzzy/)
 - [pybktree](https://pypi.org/project/pybktree/)
 - [indictrans](https://pypi.org/project/indic-transliteration/)
 - [codecs](https://pypi.org/project/openapi-codec/)
+- [ekphrasis](https://github.com/cbaziotis/ekphrasis)
+- [emoji](https://pypi.org/project/emoji)
+- [bs4](https://pypi.org/project/beautifulsoup4/)
 ## Usage
 
 You can use this pipeline end to end, or run the individual components within 
