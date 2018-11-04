@@ -20,7 +20,7 @@ Options:
 from DataManagement import indicLangIdentifier, polyglot_SpellChecker, indic_transliterator
 from DataManagement import monolingualCorpus
 from DataManagement import tweetFilterCollection, dumbFilterCollection
-from .cm_spellchecker import Spellchecker
+from cm_spellchecker import Spellchecker
 import codecs
 # from docopt import docopt
 import os
