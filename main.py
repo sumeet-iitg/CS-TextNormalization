@@ -24,6 +24,7 @@ from cm_spellchecker import Spellchecker
 import codecs
 # from docopt import docopt
 import os
+from os import path
 import argparse
 
 
@@ -84,7 +85,7 @@ def normalize_codemixed_text(source_file, lang_list):
     outFile = fileName + "_filtered"
     outFile = os.path.join(head, outFile + "." + ext)
     # TODO: MEHERESH, Invoke the Spellchecker constructor from here
-    # spellChecker = Spellchecker("spellcheck/data/bktree.pkl", 1, "firstOf", None)
+    spellChecker = Spellchecker()
 
     # if the lines within this file are already language annotated
     isLangTagged = True
@@ -110,8 +111,8 @@ def normalize_codemixed_text(source_file, lang_list):
                         lang_tagged_line += token + "\\" + lang
                         lid_tags.append(lang)
 
-                spell_corrected_line = " ".join(words)
-                # TODO: MEHRESH replace with spell_corrected_line = spellChecker.correctSentence(lang_tagged_line)
+                # spell_corrected_line = " ".join(words)
+                spell_corrected_line = spellChecker.correctSentence(lang_tagged_line)
                 # 3. Transliterate each word to their language specific script
                 translit_words = []
 
